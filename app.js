@@ -2,7 +2,7 @@ import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS, MILESTONES } 
 import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-14";
+const APP_VERSION = "2026.10.14-15";
 
 /* =========================================================
    Storage
@@ -357,6 +357,7 @@ const I = {
   check: `<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
   more: `<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>`,
   close: `<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+  dice: `<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><circle cx="8.5" cy="8.5" r="1.4"/><circle cx="15.5" cy="8.5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="8.5" cy="15.5" r="1.4"/><circle cx="15.5" cy="15.5" r="1.4"/></svg>`,
   chev: `<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`,
   grip: `<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>`,
 };
@@ -504,9 +505,14 @@ function viewNow() {
     <button class="quick" data-action="recap"><strong>This week</strong><span class="item-meta">Skills, favorites, toys, naps</span></button>
     <button class="quick" data-action="milestones"><strong>Milestones</strong><span class="item-meta">${state.milestonesSetup ? `${reached} reached` : "Log what she can do"}</span></button>
   </div>`;
+  const roulette = `<button class="roulette-strip" data-action="roulette">
+    <span class="dice" aria-hidden="true">${I.dice}</span>
+    <span class="grow"><strong>Playroom roulette</strong><span class="item-meta">Spin for something to do right now</span></span>
+  </button>`;
   return header(parseKey(k).toLocaleDateString([], { weekday: "long" }), ageLabel() ? `${name} is ${ageLabel()}` : "")
     + staleNotice()
     + hero
+    + roulette
     + quick
     + toysSummary()
     + `<h2>Skills today</h2>` + stacker(k)
@@ -1212,6 +1218,64 @@ function sheetDayToys({ day }) {
   return sheetShell(`Toys for ${when}`, body);
 }
 
+/* Playroom roulette ------------------------------------- */
+// Everything she could do right now: right age, toys out (or no toys needed),
+// and nothing she was recently not ready for or not interested in.
+function roulettePool(skip = []) {
+  const k = todayKey();
+  const age = ageMonths().decimal;
+  const doneToday = new Set(ensurePlan(k).windows.flatMap((w) => w.items.filter((i) => i.done).map((i) => i.activityId)));
+  const twoWeeks = dateKey(addDays(new Date(), -14)), oneWeek = dateKey(addDays(new Date(), -7));
+  return state.activities.filter((a) => {
+    if (!fitsAge(a, age) || activityToysAway(a) || skip.includes(a.id)) return false;
+    const h = historyFor(a.id);
+    if (h.lastNotReady && h.lastNotReady >= twoWeeks) return false;
+    if (h.lastNotInterested && h.lastNotInterested >= oneWeek) return false;
+    return true;
+  }).map((a) => {
+    const h = historyFor(a.id);
+    const weight = (doneToday.has(a.id) ? 0.2 : 1) + h.loved * 0.6 + h.liked * 0.2 + (a.fav ? 1 : 0) + (activityToysOut(a) ? 0.5 : 0);
+    return { a, weight };
+  });
+}
+function spinPick(pool) {
+  const total = pool.reduce((n, x) => n + x.weight, 0);
+  let r = Math.random() * total;
+  for (const x of pool) { r -= x.weight; if (r <= 0) return x.a; }
+  return pool[pool.length - 1]?.a;
+}
+function rouletteWindow() {
+  const plan = ensurePlan(todayKey());
+  return plan.windows.find((w) => w.startedAt && !w.endedAt) || plan.windows.find((w) => !w.endedAt) || null;
+}
+
+function sheetRoulette(s) {
+  const a = s.pick ? act(s.pick) : null;
+  const w = rouletteWindow();
+  const toyNames = (a?.toys || []).map((id) => toyById(id)?.name).filter(Boolean);
+  const body = `
+    <div class="reel ${s.spinning ? "spinning" : ""}" aria-live="polite">
+      <div class="reel-title" id="reel-title">${a ? esc(a.title) : s.empty ? "Nothing to spin" : "Ready?"}</div>
+      ${a && !s.spinning ? `<div class="facts" style="justify-content:center">
+        <span class="fact">${a.minutes} min</span>
+        ${a.skills.map((sk) => `<span class="fact"><i class="dot" style="background:var(--${sk})"></i>${SKILLS[sk].label}</span>`).join("")}
+      </div>` : ""}
+    </div>
+    ${s.empty ? `<p class="history">No activities fit right now. Bring out a few toys or log milestones to open up more.</p>` : ""}
+    ${a && !s.spinning ? `
+      ${a.materials?.length ? `<h4>You'll need</h4><p>${esc(a.materials.join(", "))}</p>` : ""}
+      ${toyNames.length ? `<p class="history" style="margin-top:4px">Uses ${toyNames.map(esc).join(", ")}</p>` : ""}
+      ${a.how ? `<h4>How to play</h4><p>${esc(a.how)}</p>` : ""}
+      ${a.safety ? `<h4>Safety</h4><p class="safety">${esc(a.safety)}</p>` : ""}
+      <div class="btn-row">
+        <button class="btn primary" data-action="roulette-do" ${w ? "" : "disabled"}>We're doing it</button>
+        <button class="btn" data-action="roulette-spin">Spin again</button>
+      </div>
+      <p class="history" style="margin-top:10px">${w ? `Adds it to ${esc(w.label)} as done.` : "All of today's windows are finished. Add a window on the Plan tab to log this."}</p>`
+    : !s.spinning && !s.empty ? `<div class="btn-row"><button class="btn primary big" data-action="roulette-spin">Spin</button></div>` : ""}`;
+  return sheetShell("Playroom roulette", body);
+}
+
 function sheetToyForm({ id }) {
   const t = id ? toyById(id) : { name: "", brand: "" };
   const body = `<form data-form="toy" data-id="${id || ""}">
@@ -1243,7 +1307,7 @@ function renderSheet() {
   const s = ui.sheet;
   if (!s) { root.innerHTML = ""; document.body.style.overflow = ""; return; }
   const prevScroll = $(".sheet", root)?.scrollTop || 0;
-  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, signin: sheetSignIn, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm, skillPick: sheetSkillPick, times: sheetTimes, rotationSettings: sheetRotationSettings, milestones: sheetMilestones, milestoneEdit: sheetMilestoneEdit, recap: sheetRecap, windowMenu: sheetWindowMenu, dayTemplates: sheetDayTemplates, backups: sheetBackups, dayToys: sheetDayToys };
+  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, signin: sheetSignIn, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm, skillPick: sheetSkillPick, times: sheetTimes, rotationSettings: sheetRotationSettings, milestones: sheetMilestones, milestoneEdit: sheetMilestoneEdit, recap: sheetRecap, windowMenu: sheetWindowMenu, dayTemplates: sheetDayTemplates, backups: sheetBackups, dayToys: sheetDayToys, roulette: sheetRoulette };
   root.innerHTML = map[s.type](s);
   document.body.style.overflow = "hidden";
   const sheet = $(".sheet", root);
@@ -1563,6 +1627,45 @@ const actions = {
     if (first) toast("Activities now match what she can do");
   },
 
+  roulette: () => { openSheet({ type: "roulette", pick: null, skip: [], spinning: false }); actions["roulette-spin"](); },
+  "roulette-spin": () => {
+    const s = ui.sheet;
+    if (s?.type !== "roulette" || s.spinning) return;
+    if (s.pick) s.skip.push(s.pick);
+    let pool = roulettePool(s.skip);
+    if (!pool.length && s.skip.length) { s.skip = []; pool = roulettePool([]); }
+    if (!pool.length) { s.empty = true; s.pick = null; refreshSheet(); return; }
+    const final = spinPick(pool);
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || pool.length < 2) { s.pick = final.id; refreshSheet(); return; }
+    s.spinning = true; s.pick = null; refreshSheet();
+    // Flick through names, slowing down, then land on the pick.
+    const names = pool.map((x) => x.a.title);
+    let delay = 45, elapsed = 0;
+    const tickReel = () => {
+      const el = document.getElementById("reel-title");
+      if (!el || ui.sheet !== s) return;
+      if (elapsed > 1300) { s.spinning = false; s.pick = final.id; refreshSheet(); return; }
+      el.textContent = names[Math.floor(Math.random() * names.length)];
+      elapsed += delay; delay *= 1.12;
+      setTimeout(tickReel, delay);
+    };
+    setTimeout(tickReel, delay);
+  },
+  "roulette-do": () => {
+    const s = ui.sheet;
+    const w = rouletteWindow();
+    if (!s?.pick || !w) return;
+    const k = todayKey();
+    if (!w.startedAt && !ensurePlan(k).windows.some((x) => x.startedAt && !x.endedAt)) w.startedAt = new Date().toISOString();
+    const existing = w.items.find((i) => i.activityId === s.pick && !i.done);
+    const it = existing || { id: uid(), activityId: s.pick, done: false, reaction: null };
+    it.done = true; it.doneAt = new Date().toISOString();
+    if (!existing) w.items.push(it);
+    ui.openReactions.add(it.id);
+    save(); closeSheet();
+    toast(`${act(s.pick).title} added to ${w.label}`);
+  },
   "day-toys": (d) => openSheet({ type: "dayToys", day: d.day }),
   "day-toys-apply": (d) => {
     const { pullOut, putAway } = dayToyPlan(d.day);
