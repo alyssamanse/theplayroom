@@ -1,4 +1,4 @@
-import { SEED, SEED_VERSION, SKILLS } from "./seed.js";
+import { SEED, SEED_VERSION, SKILLS, TAGS } from "./seed.js";
 
 /* =========================================================
    Storage
@@ -6,8 +6,8 @@ import { SEED, SEED_VERSION, SKILLS } from "./seed.js";
 const KEY = "playroom.v1";
 
 const DEFAULT_SETTINGS = {
-  name: "Mer",
-  birthdate: "2026-02-23",
+  name: "Baby",
+  birthdate: "",
   windowTarget: 150,   // minutes awake per window
   playMinutes: 45,     // planned activity minutes per window when filling
   windowsPerDay: 4,
@@ -57,7 +57,7 @@ save();
 const ui = {
   tab: "now",
   planDay: "today",
-  lib: { q: "", age: "now", skill: null, fav: false },
+  lib: { q: "", age: "now", skill: null, tag: null, fav: false },
   sheet: null, // { type, ...args }
   openReactions: new Set(), // item ids showing reaction chips
 };
@@ -78,6 +78,7 @@ const tomorrowKey = () => dateKey(addDays(new Date(), 1));
 function parseKey(k) { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d); }
 
 function ageMonths(at = new Date()) {
+  if (!state.settings.birthdate) return { months: -1, days: 0, decimal: -1 };
   const b = parseKey(state.settings.birthdate);
   let months = (at.getFullYear() - b.getFullYear()) * 12 + (at.getMonth() - b.getMonth());
   let anchor = new Date(b); anchor.setMonth(b.getMonth() + months);
@@ -298,7 +299,7 @@ function viewNow() {
     return `<div class="day-row ${cls}"><span class="state"></span><div><strong>${esc(w.label)}</strong>${when ? `<div class="status" style="font-size:13px;color:var(--muted)">${when}</div>` : ""}</div><span class="count">${d}/${w.items.length}</span></div>`;
   }).join("");
 
-  return header(parseKey(k).toLocaleDateString([], { weekday: "long" }), `${name} is ${ageLabel()}`)
+  return header(parseKey(k).toLocaleDateString([], { weekday: "long" }), ageLabel() ? `${name} is ${ageLabel()}` : "")
     + hero
     + `<h2>Skills today</h2>` + stacker(k)
     + `<h2>Today's windows</h2>` + rows;
@@ -340,7 +341,7 @@ function viewPlan() {
 }
 
 function libraryResults() {
-  const { q, age, skill, fav } = ui.lib;
+  const { q, age, skill, tag, fav } = ui.lib;
   const now = ageMonths().decimal;
   const needle = q.trim().toLowerCase();
   return state.activities
@@ -348,6 +349,7 @@ function libraryResults() {
       if (age === "now" && !fitsAge(a, now)) return false;
       if (age === "soon" && !(a.minAge > now && a.minAge <= now + 3)) return false;
       if (skill && !a.skills.includes(skill)) return false;
+      if (tag && !(a.tags || []).includes(tag)) return false;
       if (fav && !a.fav) return false;
       if (needle) {
         const hay = [a.title, a.how, ...(a.materials || [])].join(" ").toLowerCase();
@@ -365,13 +367,13 @@ function libraryList() {
   return `<p class="result-count">${list.length} ${list.length === 1 ? "activity" : "activities"} ${label}</p>` + list.map((a) => `
     <button class="lib-item" data-action="detail" data-id="${a.id}">
       <div class="row1"><h3>${a.fav ? `<span class="star" aria-label="Favorite">★</span> ` : ""}${esc(a.title)}</h3><span class="mins">${a.minutes} min</span></div>
-      <div class="item-meta">${skillDots(a.skills)} ${ageRange(a)}${a.custom ? " · Yours" : ""}</div>
+      <div class="item-meta">${skillDots(a.skills)} ${ageRange(a)}${a.custom ? " · Yours" : (a.tags || []).includes("her-toys") ? " · Her toys" : ""}</div>
       ${a.materials?.length ? `<div class="mat">${esc(a.materials.join(", "))}</div>` : ""}
     </button>`).join("");
 }
 
 function viewLibrary() {
-  const { q, age, skill, fav } = ui.lib;
+  const { q, age, skill, tag, fav } = ui.lib;
   return header("Library", `${state.activities.length} activities`)
     + `<input class="search" type="search" placeholder="Search activities or materials" value="${esc(q)}" data-input="lib-q" aria-label="Search activities">
       <div class="filters" role="group" aria-label="Filters">
@@ -379,6 +381,7 @@ function viewLibrary() {
         <button class="chip" data-action="lib-age" data-v="soon" aria-pressed="${age === "soon"}">Coming up</button>
         <button class="chip" data-action="lib-age" data-v="all" aria-pressed="${age === "all"}">All ages</button>
         <button class="chip" data-action="lib-fav" aria-pressed="${fav}">★ Favorites</button>
+        ${Object.entries(TAGS).map(([key, t]) => `<button class="chip" data-action="lib-tag" data-v="${key}" aria-pressed="${tag === key}">${t.label}</button>`).join("")}
       </div>
       <div class="filters" role="group" aria-label="Skill">
         ${Object.entries(SKILLS).map(([key, s]) => `<button class="chip" data-action="lib-skill" data-v="${key}" aria-pressed="${skill === key}"><i class="dot" style="background:var(--${key})"></i>${s.label}</button>`).join("")}
@@ -413,6 +416,7 @@ function sheetDetail({ id, day, win, item }) {
       <span class="fact">${a.minutes} min</span>
       <span class="fact">${ageRange(a)}</span>
       ${a.skills.map((s) => `<span class="fact"><i class="dot" style="background:var(--${s})"></i>${SKILLS[s].label}</span>`).join("")}
+      ${(a.tags || []).map((t) => TAGS[t] ? `<span class="fact">${TAGS[t].label}</span>` : "").join("")}
     </div>
     ${parts.length ? `<p class="history">${parts.join(", ")}.</p>` : ""}
     ${a.materials?.length ? `<h4>Materials</h4><ul class="mats">${a.materials.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : `<h4>Materials</h4><p>Nothing needed.</p>`}
@@ -491,6 +495,9 @@ function sheetForm({ id }) {
     <div class="field"><span class="lbl">Skills it builds</span><div class="skill-pick">
       ${Object.entries(SKILLS).map(([k, s]) => `<button type="button" class="chip" data-action="form-skill" data-v="${k}" aria-pressed="${a.skills.includes(k)}"><i class="dot" style="background:var(--${k})"></i>${s.label}</button>`).join("")}
     </div></div>
+    <div class="field"><span class="lbl">Uses</span><div class="skill-pick">
+      ${Object.entries(TAGS).map(([k, t]) => `<button type="button" class="chip" data-action="form-skill" data-tag="1" data-v="${k}" aria-pressed="${(a.tags || []).includes(k)}">${t.label}</button>`).join("")}
+    </div></div>
     <div class="field"><label for="f-mat">Materials</label><textarea id="f-mat" name="materials" placeholder="One per line">${esc((a.materials || []).join("\n"))}</textarea></div>
     <div class="field"><label for="f-how">How to play</label><textarea id="f-how" name="how">${esc(a.how)}</textarea></div>
     <div class="field"><label for="f-safety">Safety notes</label><textarea id="f-safety" name="safety" style="min-height:60px">${esc(a.safety)}</textarea></div>
@@ -502,9 +509,10 @@ function sheetForm({ id }) {
 function sheetSettings() {
   const s = state.settings;
   const hidden = state.hiddenSeedIds.length;
-  const body = `<form data-form="settings">
+  const welcome = !s.birthdate;
+  const body = `${welcome ? `<p class="history">Welcome to The Playroom. Add your baby's name and birthdate so the library shows activities for her age.</p>` : ""}<form data-form="settings">
     <div class="field"><label for="s-name">Baby's name</label><input id="s-name" name="name" value="${esc(s.name)}"></div>
-    <div class="field"><label for="s-bd">Birthdate</label><input id="s-bd" name="birthdate" type="date" value="${esc(s.birthdate)}"></div>
+    <div class="field"><label for="s-bd">Birthdate</label><input id="s-bd" name="birthdate" type="date" required value="${esc(s.birthdate)}"></div>
     <div class="field"><label for="s-wt">Typical wake window (minutes)</label><input id="s-wt" name="windowTarget" type="number" inputmode="numeric" min="30" max="360" value="${s.windowTarget}"><span class="help">Drives the timer on the Now screen. Adjust as her windows stretch.</span></div>
     <div class="field"><label for="s-pm">Activity time per window (minutes)</label><input id="s-pm" name="playMinutes" type="number" inputmode="numeric" min="5" max="240" value="${s.playMinutes}"><span class="help">How much "Fill with ideas" plans, leaving room for feeds and diapers.</span></div>
     <div class="field"><label for="s-wpd">Windows per day</label><input id="s-wpd" name="windowsPerDay" type="number" inputmode="numeric" min="1" max="6" value="${s.windowsPerDay}"><span class="help">Applies to days you haven't planned yet.</span></div>
@@ -518,7 +526,7 @@ function sheetSettings() {
     <input id="import-file" type="file" accept="application/json,.json" class="visually-hidden" data-change="import">
   </div>
   ${hidden ? `<h4>Hidden activities</h4><div class="btn-row"><button class="btn small" data-action="unhide">Restore ${hidden} hidden starter ${hidden === 1 ? "activity" : "activities"}</button></div>` : ""}`;
-  return sheetShell("Settings", body);
+  return sheetShell(welcome ? "Welcome" : "Settings", body);
 }
 
 /* =========================================================
@@ -550,7 +558,9 @@ function renderSheet() {
   s._keepScroll = false;
 }
 function openSheet(sheet) { ui.sheet = sheet; ui.pickQ = ""; renderSheet(); }
-function closeSheet() { ui.sheet = null; renderSheet(); render(); }
+function closeSheet() {
+  if (!state.settings.birthdate) { toast("Add a birthdate to get started"); return; }
+  ui.sheet = null; renderSheet(); render(); }
 function refreshSheet() { if (ui.sheet) { ui.sheet._keepScroll = true; renderSheet(); } }
 
 function tick() {
@@ -710,6 +720,7 @@ const actions = {
 
   "lib-age": (d) => { ui.lib.age = d.v; render(); },
   "lib-skill": (d) => { ui.lib.skill = ui.lib.skill === d.v ? null : d.v; render(); },
+  "lib-tag": (d) => { ui.lib.tag = ui.lib.tag === d.v ? null : d.v; render(); },
   "lib-fav": () => { ui.lib.fav = !ui.lib.fav; render(); },
   detail: (d) => openSheet({ type: "detail", id: d.id }),
   "add-to": (d) => openSheet({ type: "addTo", id: d.id }),
@@ -810,6 +821,7 @@ document.addEventListener("submit", (e) => {
   const fd = new FormData(form);
   if (form.dataset.form === "settings") {
     const s = state.settings;
+    if (!fd.get("birthdate")) { toast("Add a birthdate"); return; }
     s.name = (fd.get("name") || "").trim() || "Baby";
     s.birthdate = fd.get("birthdate") || s.birthdate;
     s.windowTarget = clampNum(fd.get("windowTarget"), 30, 360, s.windowTarget);
@@ -820,14 +832,15 @@ document.addEventListener("submit", (e) => {
   if (form.dataset.form === "activity") {
     const title = (fd.get("title") || "").trim();
     if (!title) { toast("Give it a name"); return; }
-    const skills = [...form.querySelectorAll('[data-action="form-skill"][aria-pressed="true"]')].map((b) => b.dataset.v);
+    const skills = [...form.querySelectorAll('[data-action="form-skill"]:not([data-tag])[aria-pressed="true"]')].map((b) => b.dataset.v);
+    const tags = [...form.querySelectorAll('[data-action="form-skill"][data-tag][aria-pressed="true"]')].map((b) => b.dataset.v);
     if (!skills.length) { toast("Pick at least one skill"); return; }
     let minAge = clampNum(fd.get("minAge"), 0, 48, 0), maxAge = clampNum(fd.get("maxAge"), 0, 48, 18);
     if (maxAge < minAge) [minAge, maxAge] = [maxAge, minAge];
     const data = {
       title, minAge, maxAge,
       minutes: clampNum(fd.get("minutes"), 1, 120, 10),
-      skills,
+      skills, tags,
       materials: String(fd.get("materials") || "").split("\n").map((s) => s.trim()).filter(Boolean),
       how: String(fd.get("how") || "").trim(),
       safety: String(fd.get("safety") || "").trim(),
@@ -854,6 +867,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 render();
+if (!state.settings.birthdate) openSheet({ type: "settings" });
 
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});

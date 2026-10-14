@@ -1,6 +1,6 @@
 # The Playroom
 
-A home-screen web app for planning and tracking Mer's wake window activities.
+A home-screen web app for planning and tracking your baby's wake window activities.
 
 - **Now**: tap "awake" to start a window timer, check off activities, and note how she liked each one.
 - **Plan**: build today's and tomorrow's windows from the library, or fill them with balanced ideas.

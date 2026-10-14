@@ -1,5 +1,5 @@
 // Network-first service worker: fresh code whenever online, cached copy when offline.
-const CACHE = "playroom-v1";
+const CACHE = "playroom-v2";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "seed.js", "manifest.webmanifest", "icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
