@@ -246,10 +246,13 @@ h3 { font-size: 16px; font-weight: 700; margin: 0; }
   background: transparent;
   transition: background .3s ease, border-color .3s ease;
 }
-.stacker .ring.on { border: 0; background: var(--c); box-shadow: inset 0 -4px 0 rgba(0,0,0,.12); }
+.stacker .ring.on { border: 0; background: color-mix(in srgb, var(--c) var(--p, 100%), var(--surface-2)); box-shadow: inset 0 -4px 0 rgba(0,0,0,.10); }
 .legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
 .legend li { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .legend li.on { color: var(--ink); font-weight: 600; }
+.legend li.planned { color: var(--ink-2); }
+.legend .n { font-size: 13px; white-space: nowrap; }
+.legend li { line-height: 1.2; }
 .legend .dot { width: 10px; height: 10px; }
 .legend .n { margin-left: auto; font-variant-numeric: tabular-nums; }
 .stacker-note { grid-column: 1 / -1; margin: 0; color: var(--ink-2); font-size: 14px; }

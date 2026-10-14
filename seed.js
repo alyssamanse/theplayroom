@@ -3,7 +3,7 @@
 // Skills: gross, fine, language, sensory, social, cognitive.
 // To add new starter activities later, append here with a new unique id and bump SEED_VERSION.
 
-export const SEED_VERSION = 5;
+export const SEED_VERSION = 6;
 
 // Starter activities removed in later versions (dropped from saved libraries unless edited).
 export const REMOVED_SEED_IDS = ["t-lovevery-rotate"];
@@ -501,6 +501,47 @@ export const SEED = [
     skills: ["social", "cognitive"],
     how: "Drape a blanket over the triangle to make a little hideout. Crawl in together, read a book inside, or play hide and seek around it.",
     safety: "Use a light blanket so she can push it away easily." },
+  // ---------- Errands and car rides ----------
+  { id: "o-grocery-tour", title: "Grocery store tour", minAge: 4, maxAge: 18, minutes: 20, tags: ["outings"],
+    materials: ["Cart or carrier"],
+    skills: ["language", "sensory", "social"],
+    how: "Narrate the store as you go: \"Bananas! Yellow bananas.\" Let her hold something safe, like a lemon or a bunch of herbs to smell. Point out colors, and wave at people.",
+    safety: "Use a cart cover or carrier, and wipe down anything she might mouth." },
+  { id: "o-cold-warm", title: "Cold aisle, warm aisle", minAge: 6, maxAge: 18, minutes: 5, tags: ["outings"],
+    materials: ["Grocery store"],
+    skills: ["sensory", "language"],
+    how: "In the freezer aisle, let her touch a cold bag of peas: \"Brrr, cold!\" Then something room temperature. Contrasts are fascinating to her.",
+    safety: "Just a quick touch; don't let her mouth packaging." },
+  { id: "o-errand-helper", title: "Errand helper", minAge: 11, maxAge: 18, minutes: 10, tags: ["outings"],
+    materials: ["A few unbreakable items to buy"],
+    skills: ["social", "fine", "language"],
+    how: "Hand her an item and ask her to drop it in the cart, or to give it to the cashier. Say thank you for her help. Being a helper builds confidence.",
+    safety: "" },
+  { id: "o-new-places", title: "New faces, new places", minAge: 6, maxAge: 18, minutes: 15, tags: ["outings"],
+    materials: [],
+    skills: ["social", "language"],
+    how: "At the post office, pharmacy, or a cafe, hold her so she can watch people. Say hi together and narrate what's happening. If she's wary of strangers, stay close and let her watch from your arms.",
+    safety: "" },
+  { id: "o-car-songs", title: "Car ride sing-along", minAge: 3, maxAge: 18, minutes: 10, tags: ["outings"],
+    materials: ["Car", "Music or your voice"],
+    skills: ["language", "social"],
+    how: "Sing the same few songs every ride so she learns them. Pause before a familiar word and see if she babbles to fill it in.",
+    safety: "" },
+  { id: "o-car-spotting", title: "Look out the window", minAge: 6, maxAge: 18, minutes: 10, tags: ["outings"],
+    materials: ["Car"],
+    skills: ["language", "cognitive"],
+    how: "Name what you pass: dog, truck, tree, bus. Use the same words each time. On repeated routes, mention landmarks before you reach them: \"Here comes the big tree!\"",
+    safety: "" },
+  { id: "o-car-toy", title: "Car seat toy time", minAge: 6, maxAge: 18, minutes: 10, tags: ["outings"],
+    materials: ["One soft toy or teether", "Board book"],
+    skills: ["fine", "sensory"],
+    how: "Save one or two soft toys just for the car so they feel special. Hand her one at the start of the ride and swap halfway.",
+    safety: "Only soft, lightweight toys in the car; nothing hard that could fly in a sudden stop." },
+  { id: "o-car-talk", title: "Car chat", minAge: 4, maxAge: 18, minutes: 10, tags: ["outings"],
+    materials: ["Car"],
+    skills: ["language", "social"],
+    how: "Talk about where you're going and what you'll do: \"We're going to see Grandma, then home for lunch.\" When she babbles, answer back as if it's a conversation.",
+    safety: "" },
   // ---------- Household items: emotional, behavioral, cognitive, physical ----------
   { id: "h-tape-pull", title: "Tape pull", minAge: 9, maxAge: 18, minutes: 10, tags: ["household"],
     materials: ["Masking or painter's tape", "High chair tray or floor"],
@@ -712,6 +753,7 @@ export const TOYS = [
 export const TAGS = {
   "her-toys":  { label: "Her toys" },
   "household": { label: "Household items" },
+  "outings":   { label: "Errands and car rides" },
 };
 
 export const SKILLS = {

@@ -2,7 +2,7 @@ import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS } from "./seed
 import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-6";
+const APP_VERSION = "2026.10.14-7";
 
 /* =========================================================
    Storage
@@ -332,20 +332,25 @@ function itemRow(k, w, it, { reactions = false } = {}) {
 
 function stacker(k) {
   const plan = ensurePlan(k);
-  const counts = {};
-  for (const w of plan.windows) for (const it of w.items) if (it.done) for (const s of act(it.activityId)?.skills || []) counts[s] = (counts[s] || 0) + 1;
+  const counts = {}, planned = {};
+  for (const w of plan.windows) for (const it of w.items) for (const s of act(it.activityId)?.skills || []) {
+    if (it.done) counts[s] = (counts[s] || 0) + 1;
+    else planned[s] = (planned[s] || 0) + 1;
+  }
+  // Ring shade: planned only = pale; each completed activity deepens it, full color at 3.
+  const shade = (sk) => counts[sk] ? [0, 55, 78, 100][Math.min(counts[sk], 3)] : planned[sk] ? 22 : 0;
   const order = ["gross", "fine", "sensory", "language", "social", "cognitive"]; // bottom to top
   const widths = [124, 110, 96, 82, 68, 54];
   const practiced = order.filter((s) => counts[s]).length;
   const missing = order.filter((s) => !counts[s]);
   const note = practiced === 6 ? "Every skill got some play today."
     : practiced === 0 ? "Rings fill in as you check off activities. Add an activity for any skill:"
-    : "Still open today. Tap a skill to add an activity for it:";
+    : "Not done yet today. Tap a skill to add an activity for it:";
   return `<section class="stacker-wrap" aria-label="Skills practiced today">
-    <div class="stacker" aria-hidden="true">${order.map((s, i) => `<span class="ring ${counts[s] ? "on" : ""}" style="--c:var(--${s});width:${widths[i]}px"></span>`).join("")}</div>
-    <ul class="legend">${[...order].reverse().map((s) => `<li class="${counts[s] ? "on" : ""}"><i class="dot" style="background:var(--${s})"></i>${SKILLS[s].label}<span class="n">${counts[s] || ""}</span></li>`).join("")}</ul>
+    <div class="stacker" aria-hidden="true">${order.map((s, i) => `<span class="ring ${shade(s) ? "on" : ""}" style="--c:var(--${s});--p:${shade(s)}%;width:${widths[i]}px"></span>`).join("")}</div>
+    <ul class="legend">${[...order].reverse().map((s) => `<li class="${counts[s] ? "on" : planned[s] ? "planned" : ""}"><i class="dot" style="background:var(--${s})"></i>${SKILLS[s].label}<span class="n">${counts[s] ? `${counts[s]} done` : planned[s] ? `${planned[s]} planned` : ""}</span></li>`).join("")}</ul>
     <p class="stacker-note">${note}</p>
-    ${missing.length ? `<div class="skill-gaps">${missing.map((sk) => `<button class="chip" data-action="skill-pick" data-skill="${sk}" data-day="${k}"><i class="dot" style="background:var(--${sk})"></i>${SKILLS[sk].label}</button>`).join("")}</div>` : ""}
+    ${missing.length ? `<div class="skill-gaps">${missing.map((sk) => `<button class="chip" data-action="skill-pick" data-skill="${sk}" data-day="${k}"><i class="dot" style="background:var(--${sk})"></i>${SKILLS[sk].label}${planned[sk] ? " · planned" : ""}</button>`).join("")}</div>` : ""}
   </section>`;
 }
 
