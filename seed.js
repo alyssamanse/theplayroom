@@ -3,7 +3,7 @@
 // Skills: gross, fine, language, sensory, social, cognitive.
 // To add new starter activities later, append here with a new unique id and bump SEED_VERSION.
 
-export const SEED_VERSION = 8;
+export const SEED_VERSION = 9;
 
 // Starter activities removed in later versions (dropped from saved libraries unless edited).
 export const REMOVED_SEED_IDS = ["t-lovevery-rotate"];
@@ -594,6 +594,27 @@ export const SEED = [
     skills: ["fine", "cognitive"],
     how: "Load a spoon and hand it to her, handle first. She'll steer it to her mouth (or her cheek). Keep a second spoon so you can reload while she practices.",
     safety: "" },
+  // ---------- Tiny Love activity table ----------
+  { id: "t-table-explore", toys: ["t-activity-table"], title: "Activity table, one thing at a time", minAge: 6, maxAge: 18, minutes: 10, tags: ["her-toys"],
+    materials: ["Tiny Love activity table"],
+    skills: ["fine", "cognitive", "language"],
+    how: "Sit her at the table (or beside it, supported) and show her one button, spinner, or slider. Press it once, name what happens, then wait for her to try. Move to a new part only when she loses interest.",
+    safety: "" },
+  { id: "t-table-pull", toys: ["t-activity-table"], title: "Pull up to the table", minAge: 7, maxAge: 14, minutes: 10, tags: ["her-toys"],
+    materials: ["Tiny Love activity table", "A favorite small toy"],
+    skills: ["gross", "cognitive"],
+    how: "Set a favorite toy on the tabletop while she's on her knees or sitting beside it. The table's sounds and lights give her a reason to pull up and stay up. Keep standing sessions short and let her lower herself down.",
+    safety: "Use it on a flat floor with a soft mat nearby, and stay within reach." },
+  { id: "t-table-cruise", toys: ["t-activity-table"], needs: ["pulls-stand"], title: "Cruise around the table", minAge: 8, maxAge: 15, minutes: 10, tags: ["her-toys"],
+    materials: ["Tiny Love activity table", "A toy"],
+    skills: ["gross"],
+    how: "Once she's standing at the table, move a toy to the next side so she side-steps around it. Each side has something new to press, which keeps her moving.",
+    safety: "Clear the floor around the table so she doesn't trip." },
+  { id: "t-table-copy", toys: ["t-activity-table"], title: "Press and copy", minAge: 8, maxAge: 18, minutes: 5, tags: ["her-toys"],
+    materials: ["Tiny Love activity table"],
+    skills: ["social", "cognitive"],
+    how: "Press a button and make a big happy face, then point to her turn. Take turns back and forth. When the music plays, bounce or clap along together.",
+    safety: "" },
   // ---------- Household items: emotional, behavioral, cognitive, physical ----------
   { id: "h-tape-pull", title: "Tape pull", minAge: 9, maxAge: 18, minutes: 10, tags: ["household"],
     materials: ["Masking or painter's tape", "High chair tray or floor"],
@@ -818,6 +839,7 @@ export const TOYS = [
   { id: "t-sensory-tiles", name: "Sensory tiles (12 textures)", brand: "", status: "stored" },
   { id: "t-phone-keys", name: "Baby phone and keys set", brand: "IKOIHO", status: "stored" },
   { id: "t-pikler", name: "Pikler triangle", brand: "", status: "stored" },
+  { id: "t-activity-table", name: "Standing activity table", brand: "Tiny Love", status: "stored" },
   { id: "t-board-books", name: "Board books", brand: "", status: "stored" },
   { id: "t-lovevery-inspector", name: "The Inspector play kit", brand: "Lovevery", status: "stored" },
   { id: "t-lovevery-senser", name: "The Senser play kit", brand: "Lovevery", status: "stored" },
