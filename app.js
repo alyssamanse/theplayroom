@@ -1,4 +1,7 @@
-import { SEED, SEED_VERSION, SKILLS, TAGS } from "./seed.js";
+import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS } from "./seed.js";
+
+// Bump this (and version.json) with every release so phones know an update is waiting.
+const APP_VERSION = "2026.10.14-3";
 
 /* =========================================================
    Storage
@@ -11,6 +14,8 @@ const DEFAULT_SETTINGS = {
   windowTarget: 150,   // minutes awake per window
   playMinutes: 45,     // planned activity minutes per window when filling
   windowsPerDay: 4,
+  outTarget: 6,        // toys out at once
+  rotateDays: 7,       // days a toy stays out before it's due for a swap
 };
 
 function freshState() {
@@ -19,6 +24,8 @@ function freshState() {
     seedVersion: SEED_VERSION,
     activities: SEED.map((a) => ({ ...a, custom: false, fav: false })),
     hiddenSeedIds: [],
+    toys: TOYS.map((t) => ({ ...t, custom: false, periods: [] })),
+    hiddenToyIds: [],
     plans: {},
   };
 }
@@ -32,11 +39,21 @@ function load() {
     s.activities ||= [];
     s.hiddenSeedIds ||= [];
     s.plans ||= {};
-    // Merge in any new starter activities added in later versions.
+    s.toys ||= [];
+    s.hiddenToyIds ||= [];
+    // Bring saved data up to date with the latest starter activities and toys.
     if ((s.seedVersion || 0) < SEED_VERSION) {
+      const seedById = new Map(SEED.map((a) => [a.id, a]));
+      s.activities = s.activities
+        .filter((a) => a.custom || a.edited || !REMOVED_SEED_IDS.includes(a.id))
+        .map((a) => (!a.custom && !a.edited && seedById.has(a.id) ? { ...seedById.get(a.id), custom: false, fav: !!a.fav } : a));
       const have = new Set(s.activities.map((a) => a.id));
       for (const a of SEED) {
         if (!have.has(a.id) && !s.hiddenSeedIds.includes(a.id)) s.activities.push({ ...a, custom: false, fav: false });
+      }
+      const haveToys = new Set(s.toys.map((t) => t.id));
+      for (const t of TOYS) {
+        if (!haveToys.has(t.id) && !s.hiddenToyIds.includes(t.id)) s.toys.push({ ...t, custom: false, periods: [] });
       }
       s.seedVersion = SEED_VERSION;
     }
@@ -58,6 +75,8 @@ const ui = {
   tab: "now",
   planDay: "today",
   lib: { q: "", age: "now", skill: null, tag: null, fav: false },
+  showRetired: false,
+  updateAvailable: null,
   sheet: null, // { type, ...args }
   openReactions: new Set(), // item ids showing reaction chips
 };
@@ -140,6 +159,63 @@ function historyFor(activityId) {
   return out;
 }
 
+/* Toys -------------------------------------------------- */
+const toyById = (id) => state.toys.find((t) => t.id === id);
+const toysOut = () => state.toys.filter((t) => t.status === "out");
+const toysStored = () => state.toys.filter((t) => t.status === "stored");
+const daysBetween = (a, b) => Math.round((parseKey(b) - parseKey(a)) / 86400000);
+function toyDaysOut(t) {
+  const p = t.periods?.[t.periods.length - 1];
+  return t.status === "out" && p && !p.end ? daysBetween(p.start, todayKey()) : 0;
+}
+function toyDaysStored(t) {
+  const last = [...(t.periods || [])].reverse().find((p) => p.end);
+  return last ? daysBetween(last.end, todayKey()) : null; // null = never out
+}
+function setToyStatus(t, next) {
+  if (t.status === next) return;
+  t.periods ||= [];
+  const open = t.periods[t.periods.length - 1];
+  if (t.status === "out" && open && !open.end) open.end = todayKey();
+  if (next === "out") t.periods.push({ start: todayKey(), end: null });
+  t.status = next;
+}
+const toyActivities = (t) => state.activities.filter((a) => (a.toys || []).includes(t.id));
+function toyFitCount(t) {
+  const age = ageMonths().decimal;
+  return toyActivities(t).filter((a) => fitsAge(a, age)).length;
+}
+const activityToysOut = (a) => (a.toys || []).length > 0 && a.toys.every((id) => toyById(id)?.status === "out");
+const activityToysAway = (a) => (a.toys || []).some((id) => { const t = toyById(id); return t && t.status !== "out"; });
+
+function rotationPlan({ fresh = false } = {}) {
+  const { outTarget, rotateDays } = state.settings;
+  const out = toysOut().sort((a, b) => toyDaysOut(b) - toyDaysOut(a));
+  let putAway = out.filter((t) => toyDaysOut(t) >= rotateDays);
+  if (!putAway.length && out.length && !fresh) putAway = out.slice(0, Math.max(1, Math.ceil(out.length / 2)));
+  const staying = out.filter((t) => !putAway.includes(t));
+  const covered = new Set(staying.flatMap((t) => toyActivities(t).flatMap((a) => a.skills)));
+  const bringCount = Math.max(0, outTarget - staying.length);
+  const ranked = toysStored().map((t) => {
+    const stored = toyDaysStored(t);
+    const fit = toyFitCount(t);
+    const linked = toyActivities(t).length;
+    let score = stored === null ? 40 : Math.min(stored, 40);
+    score += Math.min(fit, 3) * 4;
+    if (linked && !fit) score -= 30; // nothing for her age right now
+    const skills = new Set(toyActivities(t).filter((a) => fitsAge(a, ageMonths().decimal)).flatMap((a) => a.skills));
+    score += [...skills].filter((k) => !covered.has(k)).length * 3;
+    return { t, score };
+  }).sort((a, b) => b.score - a.score);
+  const bringOut = [];
+  for (const { t } of ranked) {
+    if (bringOut.length >= bringCount) break;
+    bringOut.push(t);
+    for (const a of toyActivities(t)) for (const k of a.skills) covered.add(k);
+  }
+  return { putAway, bringOut };
+}
+
 /* Suggestions ------------------------------------------- */
 function suggest(k, wid, { maxMinutes = Infinity, count = 1 } = {}) {
   const plan = ensurePlan(k);
@@ -161,6 +237,8 @@ function suggest(k, wid, { maxMinutes = Infinity, count = 1 } = {}) {
         let score = Math.random() * 2.5;
         for (const s of a.skills) score += skillCount[s] ? 1 / (1 + skillCount[s]) : 3;
         score += h.loved * 1.5 + (a.fav ? 2 : 0);
+        if (activityToysOut(a)) score += 2.5;
+        else if (activityToysAway(a)) score -= 3;
         if (h.last && h.last >= twoDaysAgo) score -= 2;
         return { a, score };
       })
@@ -205,7 +283,10 @@ const I = {
    Views
    ========================================================= */
 function header(title, sub) {
-  return `<header class="top"><div><h1>${esc(title)}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div>
+  const banner = ui.updateAvailable
+    ? `<div class="update-banner" role="status"><span>A new version of The Playroom is ready.</span><button class="btn small primary" data-action="hard-refresh">Update now</button></div>`
+    : "";
+  return banner + `<header class="top"><div><h1>${esc(title)}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div>
     <button class="icon-btn" data-action="settings" aria-label="Settings">${I.gear}</button></header>`;
 }
 
@@ -301,8 +382,70 @@ function viewNow() {
 
   return header(parseKey(k).toLocaleDateString([], { weekday: "long" }), ageLabel() ? `${name} is ${ageLabel()}` : "")
     + hero
+    + toysSummary()
     + `<h2>Skills today</h2>` + stacker(k)
     + `<h2>Today's windows</h2>` + rows;
+}
+
+function toysSummary() {
+  const out = toysOut();
+  const due = out.filter((t) => toyDaysOut(t) >= state.settings.rotateDays).length;
+  const names = out.slice(0, 3).map((t) => esc(t.name)).join(", ") + (out.length > 3 ? ` +${out.length - 3} more` : "");
+  return `<button class="toys-strip ${due ? "due" : ""}" data-action="goto-toys">
+    <span class="toys-strip-main"><strong>${out.length ? `${out.length} ${out.length === 1 ? "toy" : "toys"} out` : "No toys marked as out"}</strong>
+    <span class="item-meta">${out.length ? names : "Tap to choose what's in her play space"}</span></span>
+    ${due ? `<span class="badge">${due} ready to swap</span>` : ""}
+  </button>`;
+}
+
+function toyRow(t) {
+  const out = t.status === "out";
+  const days = out ? toyDaysOut(t) : toyDaysStored(t);
+  const due = out && days >= state.settings.rotateDays;
+  const when = t.status === "retired" ? "Outgrown"
+    : out ? (days === 0 ? "Out since today" : `Out ${days} ${days === 1 ? "day" : "days"}`)
+    : days === null ? "Not out yet" : days === 0 ? "Put away today" : `Put away ${days} ${days === 1 ? "day" : "days"} ago`;
+  const fit = toyFitCount(t);
+  return `<li class="toy-row ${due ? "due" : ""}">
+    <button class="item-main" data-action="toy" data-id="${t.id}">
+      <span class="item-title">${esc(t.name)}</span>
+      <span class="item-meta">${when}${fit ? ` · ${fit} ${fit === 1 ? "activity" : "activities"} for her age` : ""}${due ? ` · <span class="due-text">Time to swap</span>` : ""}</span>
+    </button>
+    ${t.status === "retired" ? "" : `<button class="btn small" data-action="toy-toggle" data-id="${t.id}">${out ? "Put away" : "Bring out"}</button>`}
+  </li>`;
+}
+
+function viewToys() {
+  const { outTarget, rotateDays } = state.settings;
+  const out = toysOut().sort((a, b) => toyDaysOut(b) - toyDaysOut(a));
+  const stored = toysStored().sort((a, b) => (toyDaysStored(b) ?? 9999) - (toyDaysStored(a) ?? 9999));
+  const retired = state.toys.filter((t) => t.status === "retired");
+  const due = out.filter((t) => toyDaysOut(t) >= rotateDays);
+  const nextDue = out.length ? Math.max(0, rotateDays - toyDaysOut(out[0])) : null;
+
+  let hero;
+  if (!out.length) {
+    hero = `<section class="hero">
+      <div class="label">Toy rotation</div>
+      <div class="resting">Keep ${outTarget} toys out at a time and swap them every ${rotateDays} days.</div>
+      <p class="hint">Fewer toys out means longer, deeper play, and toys feel new again when they come back.</p>
+      <button class="btn primary big" data-action="rotate" data-fresh="1">Pick a starting set for me</button>
+      <button class="btn big" style="margin-top:8px" data-action="choose-out">Choose what's out myself</button>
+    </section>`;
+  } else {
+    hero = `<section class="hero">
+      <div class="label">${out.length} of ${outTarget} toys out</div>
+      <div class="resting">${due.length ? `${due.length} ${due.length === 1 ? "toy has" : "toys have"} been out ${rotateDays}+ days.` : nextDue === 0 ? "A swap is due today." : `Next swap in ${nextDue} ${nextDue === 1 ? "day" : "days"}.`}</div>
+      <button class="btn ${due.length ? "primary" : ""} big" data-action="rotate">${due.length ? "Swap toys now" : "Swap early"}</button>
+    </section>`;
+  }
+
+  return header("Toys", `${out.length} out · ${stored.length} in storage`)
+    + hero
+    + (out.length ? `<h2>Out now</h2><ul class="list toy-list">${out.map(toyRow).join("")}</ul>` : "")
+    + `<h2>In storage</h2>${stored.length ? `<ul class="list toy-list">${stored.map(toyRow).join("")}</ul>` : `<div class="empty">Everything is out.</div>`}`
+    + (retired.length ? `<button class="btn ghost small" style="margin-top:14px" data-action="toggle-retired">${ui.showRetired ? "Hide" : "Show"} outgrown toys (${retired.length})</button>${ui.showRetired ? `<ul class="list toy-list">${retired.map(toyRow).join("")}</ul>` : ""}` : "")
+    + `<div class="plan-foot" style="margin-top:20px"><button class="btn" data-action="new-toy">Add a toy</button></div>`;
 }
 
 function viewPlan() {
@@ -349,7 +492,8 @@ function libraryResults() {
       if (age === "now" && !fitsAge(a, now)) return false;
       if (age === "soon" && !(a.minAge > now && a.minAge <= now + 3)) return false;
       if (skill && !a.skills.includes(skill)) return false;
-      if (tag && !(a.tags || []).includes(tag)) return false;
+      if (tag === "out-now") { if (!activityToysOut(a)) return false; }
+      else if (tag && !(a.tags || []).includes(tag)) return false;
       if (fav && !a.fav) return false;
       if (needle) {
         const hay = [a.title, a.how, ...(a.materials || [])].join(" ").toLowerCase();
@@ -381,6 +525,7 @@ function viewLibrary() {
         <button class="chip" data-action="lib-age" data-v="soon" aria-pressed="${age === "soon"}">Coming up</button>
         <button class="chip" data-action="lib-age" data-v="all" aria-pressed="${age === "all"}">All ages</button>
         <button class="chip" data-action="lib-fav" aria-pressed="${fav}">★ Favorites</button>
+        <button class="chip" data-action="lib-tag" data-v="out-now" aria-pressed="${tag === "out-now"}">Toys out now</button>
         ${Object.entries(TAGS).map(([key, t]) => `<button class="chip" data-action="lib-tag" data-v="${key}" aria-pressed="${tag === key}">${t.label}</button>`).join("")}
       </div>
       <div class="filters" role="group" aria-label="Skill">
@@ -416,7 +561,8 @@ function sheetDetail({ id, day, win, item }) {
       <span class="fact">${a.minutes} min</span>
       <span class="fact">${ageRange(a)}</span>
       ${a.skills.map((s) => `<span class="fact"><i class="dot" style="background:var(--${s})"></i>${SKILLS[s].label}</span>`).join("")}
-      ${(a.tags || []).map((t) => TAGS[t] ? `<span class="fact">${TAGS[t].label}</span>` : "").join("")}
+      ${(a.tags || []).filter((t) => t !== "her-toys" || !(a.toys || []).length).map((t) => TAGS[t] ? `<span class="fact">${TAGS[t].label}</span>` : "").join("")}
+      ${(a.toys || []).map((id) => toyById(id)).filter(Boolean).map((t) => `<button class="fact toy-fact ${t.status === "out" ? "out" : ""}" data-action="toy" data-id="${t.id}">${esc(t.name)}${t.status === "out" ? " · out" : " · put away"}</button>`).join("")}
     </div>
     ${parts.length ? `<p class="history">${parts.join(", ")}.</p>` : ""}
     ${a.materials?.length ? `<h4>Materials</h4><ul class="mats">${a.materials.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : `<h4>Materials</h4><p>Nothing needed.</p>`}
@@ -483,8 +629,9 @@ function sheetPicker({ day, win, fit }) {
   return sheetShell(`Add to ${w.label}`, body);
 }
 
-function sheetForm({ id }) {
-  const a = id ? act(id) : { title: "", minAge: Math.max(0, ageMonths().months), maxAge: 18, minutes: 10, materials: [], skills: [], how: "", safety: "" };
+function sheetForm({ id, toy }) {
+  const a = id ? act(id) : { title: "", minAge: Math.max(0, ageMonths().months), maxAge: 18, minutes: 10, materials: [], skills: [], how: "", safety: "", toys: toy ? [toy] : [] };
+  const toyChoices = state.toys.filter((t) => t.status !== "retired" || (a.toys || []).includes(t.id));
   const body = `<form data-form="activity" data-id="${id || ""}">
     <div class="field"><label for="f-title">Name</label><input id="f-title" name="title" required value="${esc(a.title)}" placeholder="e.g. Kitchen spoon drumming"></div>
     <div class="row2">
@@ -495,8 +642,9 @@ function sheetForm({ id }) {
     <div class="field"><span class="lbl">Skills it builds</span><div class="skill-pick">
       ${Object.entries(SKILLS).map(([k, s]) => `<button type="button" class="chip" data-action="form-skill" data-v="${k}" aria-pressed="${a.skills.includes(k)}"><i class="dot" style="background:var(--${k})"></i>${s.label}</button>`).join("")}
     </div></div>
-    <div class="field"><span class="lbl">Uses</span><div class="skill-pick">
-      ${Object.entries(TAGS).map(([k, t]) => `<button type="button" class="chip" data-action="form-skill" data-tag="1" data-v="${k}" aria-pressed="${(a.tags || []).includes(k)}">${t.label}</button>`).join("")}
+    <div class="field"><span class="lbl">Her toys it uses</span><div class="skill-pick">
+      ${toyChoices.map((t) => `<button type="button" class="chip" data-action="form-skill" data-toy="1" data-v="${t.id}" aria-pressed="${(a.toys || []).includes(t.id)}">${esc(t.name)}</button>`).join("")}
+      <button type="button" class="chip" data-action="form-skill" data-tag="1" data-v="household" aria-pressed="${(a.tags || []).includes("household")}">Household items</button>
     </div></div>
     <div class="field"><label for="f-mat">Materials</label><textarea id="f-mat" name="materials" placeholder="One per line">${esc((a.materials || []).join("\n"))}</textarea></div>
     <div class="field"><label for="f-how">How to play</label><textarea id="f-how" name="how">${esc(a.how)}</textarea></div>
@@ -516,6 +664,10 @@ function sheetSettings() {
     <div class="field"><label for="s-wt">Typical wake window (minutes)</label><input id="s-wt" name="windowTarget" type="number" inputmode="numeric" min="30" max="360" value="${s.windowTarget}"><span class="help">Drives the timer on the Now screen. Adjust as her windows stretch.</span></div>
     <div class="field"><label for="s-pm">Activity time per window (minutes)</label><input id="s-pm" name="playMinutes" type="number" inputmode="numeric" min="5" max="240" value="${s.playMinutes}"><span class="help">How much "Fill with ideas" plans, leaving room for feeds and diapers.</span></div>
     <div class="field"><label for="s-wpd">Windows per day</label><input id="s-wpd" name="windowsPerDay" type="number" inputmode="numeric" min="1" max="6" value="${s.windowsPerDay}"><span class="help">Applies to days you haven't planned yet.</span></div>
+    <div class="row2" style="grid-template-columns:1fr 1fr">
+      <div class="field"><label for="s-ot">Toys out at once</label><input id="s-ot" name="outTarget" type="number" inputmode="numeric" min="1" max="20" value="${s.outTarget}"></div>
+      <div class="field"><label for="s-rd">Swap every (days)</label><input id="s-rd" name="rotateDays" type="number" inputmode="numeric" min="1" max="60" value="${s.rotateDays}"></div>
+    </div>
     <div class="btn-row"><button class="btn primary" type="submit">Save settings</button></div>
   </form>
   <h4>Backup</h4>
@@ -525,8 +677,84 @@ function sheetSettings() {
     <label class="btn small" for="import-file">Restore backup</label>
     <input id="import-file" type="file" accept="application/json,.json" class="visually-hidden" data-change="import">
   </div>
+  <h4>App version</h4>
+  <p class="history">You're on version ${APP_VERSION}.${ui.updateAvailable ? ` Version ${esc(ui.updateAvailable)} is ready.` : ""} Updating keeps all your plans and toys.</p>
+  <div class="btn-row"><button class="btn small" data-action="hard-refresh">Refresh to latest version</button></div>
   ${hidden ? `<h4>Hidden activities</h4><div class="btn-row"><button class="btn small" data-action="unhide">Restore ${hidden} hidden starter ${hidden === 1 ? "activity" : "activities"}</button></div>` : ""}`;
   return sheetShell(welcome ? "Welcome" : "Settings", body);
+}
+
+function sheetToy({ id }) {
+  const t = toyById(id);
+  if (!t) return "";
+  const age = ageMonths().decimal;
+  const acts = toyActivities(t);
+  const fit = acts.filter((a) => fitsAge(a, age));
+  const later = acts.filter((a) => a.minAge > age);
+  const times = (t.periods || []).length;
+  const status = t.status === "out" ? `Out for ${toyDaysOut(t)} ${toyDaysOut(t) === 1 ? "day" : "days"}`
+    : t.status === "retired" ? "Outgrown" : toyDaysStored(t) === null ? "Hasn't been out yet" : `In storage for ${toyDaysStored(t)} days`;
+  const actRow = (a) => `<button class="pick" data-action="detail" data-id="${a.id}"><span class="grow"><strong>${esc(a.title)}</strong><div class="item-meta">${skillDots(a.skills)} ${a.minutes} min · ${ageRange(a)}</div></span></button>`;
+  const body = `
+    <div class="facts">${t.brand ? `<span class="fact">${esc(t.brand)}</span>` : ""}<span class="fact">${status}</span>${times ? `<span class="fact">Out ${times} ${times === 1 ? "time" : "times"}</span>` : ""}</div>
+    <div class="btn-row">
+      ${t.status === "retired"
+        ? `<button class="btn primary" data-action="toy-status" data-id="${t.id}" data-v="stored">Back in rotation</button>`
+        : `<button class="btn primary" data-action="toy-toggle" data-id="${t.id}">${t.status === "out" ? "Put away" : "Bring out"}</button>
+           <button class="btn" data-action="toy-status" data-id="${t.id}" data-v="retired">Mark outgrown</button>`}
+    </div>
+    <h4>Activities for her age</h4>
+    ${fit.length ? `<div class="pick-list">${fit.map(actRow).join("")}</div>` : `<p class="history">None in the library yet.</p>`}
+    ${later.length ? `<h4>Coming up</h4><div class="pick-list">${later.map(actRow).join("")}</div>` : ""}
+    <div class="btn-row">
+      <button class="btn small" data-action="new-activity" data-toy="${t.id}">Add an activity with this toy</button>
+      <button class="btn small" data-action="edit-toy" data-id="${t.id}">Rename</button>
+      <button class="btn small danger" data-action="delete-toy" data-id="${t.id}">Remove</button>
+    </div>`;
+  return sheetShell(t.name, body);
+}
+
+function sheetRotate(s) {
+  if (!s.putAway) {
+    const plan = rotationPlan({ fresh: !!s.fresh });
+    s.putAway = plan.putAway.map((t) => t.id);
+    s.bringOut = plan.bringOut.map((t) => t.id);
+    s.keep = new Set([...s.putAway, ...s.bringOut]);
+  }
+  const row = (id, verb) => {
+    const t = toyById(id);
+    const on = s.keep.has(id);
+    const sub = verb === "away" ? `Out ${toyDaysOut(t)} days` : toyDaysStored(t) === null ? `Not out yet · ${toyFitCount(t)} activities for her age` : `Stored ${toyDaysStored(t)} days · ${toyFitCount(t)} activities for her age`;
+    return `<button class="pick ${on ? "added" : ""}" data-action="rotate-toggle" data-id="${id}" aria-pressed="${on}">
+      <span class="grow"><strong>${esc(t.name)}</strong><div class="item-meta">${sub}</div></span><span class="plus">${on ? "✓" : ""}</span></button>`;
+  };
+  const body = `
+    ${s.putAway.length ? `<h4>Put away</h4><div class="pick-list">${s.putAway.map((id) => row(id, "away")).join("")}</div>` : ""}
+    ${s.bringOut.length ? `<h4>Bring out</h4><div class="pick-list">${s.bringOut.map((id) => row(id, "out")).join("")}</div>` : `<p class="history">Nothing in storage to bring out.</p>`}
+    <p class="history" style="margin-top:12px">Picks favor toys that have been away longest, have activities for her age, and cover skills the other toys don't.</p>
+    <div class="btn-row">
+      <button class="btn primary" data-action="rotate-apply">Swap ${[...s.keep].length} ${[...s.keep].length === 1 ? "toy" : "toys"}</button>
+      <button class="btn" data-action="rotate-reshuffle">Different picks</button>
+    </div>`;
+  return sheetShell(s.fresh ? "Starting set" : "Swap toys", body);
+}
+
+function sheetChooseOut() {
+  const list = state.toys.filter((t) => t.status !== "retired");
+  const body = `<p class="history">Tap the toys that are in her play space right now.</p>
+    <div class="pick-list">${list.map((t) => `<button class="pick ${t.status === "out" ? "added" : ""}" data-action="toy-toggle" data-id="${t.id}" data-stay="1"><span class="grow"><strong>${esc(t.name)}</strong><div class="item-meta">${esc(t.brand || "")}</div></span><span class="plus">${t.status === "out" ? "✓" : "+"}</span></button>`).join("")}</div>
+    <div class="btn-row"><button class="btn primary" data-action="close-sheet">Done</button></div>`;
+  return sheetShell("What's out now?", body);
+}
+
+function sheetToyForm({ id }) {
+  const t = id ? toyById(id) : { name: "", brand: "" };
+  const body = `<form data-form="toy" data-id="${id || ""}">
+    <div class="field"><label for="t-name">Toy name</label><input id="t-name" name="name" required value="${esc(t.name)}"></div>
+    <div class="field"><label for="t-brand">Brand (optional)</label><input id="t-brand" name="brand" value="${esc(t.brand)}"></div>
+    <div class="btn-row"><button class="btn primary" type="submit">${id ? "Save" : "Add toy"}</button></div>
+  </form>`;
+  return sheetShell(id ? "Rename toy" : "Add a toy", body);
 }
 
 /* =========================================================
@@ -535,7 +763,7 @@ function sheetSettings() {
 let lastTab = null;
 function render() {
   const app = $("#app");
-  const views = { now: viewNow, plan: viewPlan, library: viewLibrary };
+  const views = { now: viewNow, plan: viewPlan, library: viewLibrary, toys: viewToys };
   const scroll = window.scrollY;
   app.innerHTML = views[ui.tab]();
   if (lastTab === ui.tab) window.scrollTo(0, scroll); else window.scrollTo(0, 0);
@@ -550,7 +778,7 @@ function renderSheet() {
   const s = ui.sheet;
   if (!s) { root.innerHTML = ""; document.body.style.overflow = ""; return; }
   const prevScroll = $(".sheet", root)?.scrollTop || 0;
-  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings };
+  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm };
   root.innerHTML = map[s.type](s);
   document.body.style.overflow = "hidden";
   const sheet = $(".sheet", root);
@@ -732,7 +960,62 @@ const actions = {
   },
   fav: (d) => { const a = act(d.id); a.fav = !a.fav; save(); refreshSheet(); render(); },
   edit: (d) => openSheet({ type: "form", id: d.id }),
-  "new-activity": () => openSheet({ type: "form" }),
+  "new-activity": (d) => openSheet({ type: "form", toy: d.toy || null }),
+  "goto-toys": () => { ui.tab = "toys"; render(); },
+  toy: (d) => openSheet({ type: "toy", id: d.id }),
+  "toy-toggle": (d) => {
+    const t = toyById(d.id);
+    setToyStatus(t, t.status === "out" ? "stored" : "out");
+    save(); render(); refreshSheet();
+    if (!d.stay) toast(t.status === "out" ? `${t.name} is out` : `${t.name} put away`);
+  },
+  "toy-status": (d) => {
+    const t = toyById(d.id);
+    setToyStatus(t, d.v);
+    save(); render(); refreshSheet();
+    toast(d.v === "retired" ? "Marked outgrown" : "Back in rotation");
+  },
+  "toggle-retired": () => { ui.showRetired = !ui.showRetired; render(); },
+  rotate: (d) => openSheet({ type: "rotate", fresh: !!d.fresh }),
+  "rotate-toggle": (d) => {
+    const s = ui.sheet;
+    s.keep.has(d.id) ? s.keep.delete(d.id) : s.keep.add(d.id);
+    refreshSheet();
+  },
+  "rotate-reshuffle": () => {
+    const s = ui.sheet;
+    const shown = new Set(s.bringOut);
+    const { putAway } = rotationPlan({ fresh: !!s.fresh });
+    // Temporarily treat shown picks as unavailable to get alternatives.
+    const saved = shown.size ? state.toys.filter((t) => shown.has(t.id)) : [];
+    saved.forEach((t) => (t._skip = t.status, t.status = "_skip"));
+    const alt = rotationPlan({ fresh: !!s.fresh }).bringOut.map((t) => t.id);
+    saved.forEach((t) => { t.status = t._skip; delete t._skip; });
+    if (!alt.length) { toast("No other toys to suggest"); return; }
+    s.putAway = putAway.map((t) => t.id);
+    s.bringOut = alt.slice(0, s.bringOut.length || alt.length);
+    s.keep = new Set([...s.putAway, ...s.bringOut]);
+    refreshSheet();
+  },
+  "rotate-apply": () => {
+    const s = ui.sheet;
+    let n = 0;
+    for (const id of s.putAway) if (s.keep.has(id)) { setToyStatus(toyById(id), "stored"); n++; }
+    for (const id of s.bringOut) if (s.keep.has(id)) { setToyStatus(toyById(id), "out"); n++; }
+    save(); ui.sheet = null; render();
+    toast(n ? `Swapped ${n} ${n === 1 ? "toy" : "toys"}` : "Nothing changed");
+  },
+  "choose-out": () => openSheet({ type: "chooseOut" }),
+  "new-toy": () => openSheet({ type: "toyForm" }),
+  "edit-toy": (d) => openSheet({ type: "toyForm", id: d.id }),
+  "delete-toy": (d) => {
+    const t = toyById(d.id);
+    if (!confirm(`Remove ${t.name} from your toys? Activities that use it stay in the library.`)) return;
+    state.toys = state.toys.filter((x) => x !== t);
+    if (!t.custom) state.hiddenToyIds.push(t.id);
+    save(); closeSheet(); toast("Toy removed");
+  },
+  "hard-refresh": hardRefresh,
   "form-skill": (d, e) => {
     const b = e.target.closest("button");
     b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
@@ -827,26 +1110,40 @@ document.addEventListener("submit", (e) => {
     s.windowTarget = clampNum(fd.get("windowTarget"), 30, 360, s.windowTarget);
     s.playMinutes = clampNum(fd.get("playMinutes"), 5, 240, s.playMinutes);
     s.windowsPerDay = clampNum(fd.get("windowsPerDay"), 1, 6, s.windowsPerDay);
+    s.outTarget = clampNum(fd.get("outTarget"), 1, 20, s.outTarget);
+    s.rotateDays = clampNum(fd.get("rotateDays"), 1, 60, s.rotateDays);
     save(); closeSheet(); toast("Settings saved");
+  }
+  if (form.dataset.form === "toy") {
+    const name = (fd.get("name") || "").trim();
+    if (!name) { toast("Give the toy a name"); return; }
+    const brand = (fd.get("brand") || "").trim();
+    const id = form.dataset.id;
+    if (id) { Object.assign(toyById(id), { name, brand }); toast("Saved"); }
+    else { state.toys.push({ id: "ct-" + uid(), name, brand, status: "stored", custom: true, periods: [] }); toast(`${name} added to storage`); }
+    save(); closeSheet();
+    return;
   }
   if (form.dataset.form === "activity") {
     const title = (fd.get("title") || "").trim();
     if (!title) { toast("Give it a name"); return; }
-    const skills = [...form.querySelectorAll('[data-action="form-skill"]:not([data-tag])[aria-pressed="true"]')].map((b) => b.dataset.v);
+    const skills = [...form.querySelectorAll('[data-action="form-skill"]:not([data-tag]):not([data-toy])[aria-pressed="true"]')].map((b) => b.dataset.v);
+    const toys = [...form.querySelectorAll('[data-action="form-skill"][data-toy][aria-pressed="true"]')].map((b) => b.dataset.v);
     const tags = [...form.querySelectorAll('[data-action="form-skill"][data-tag][aria-pressed="true"]')].map((b) => b.dataset.v);
+    if (toys.length) tags.push("her-toys");
     if (!skills.length) { toast("Pick at least one skill"); return; }
     let minAge = clampNum(fd.get("minAge"), 0, 48, 0), maxAge = clampNum(fd.get("maxAge"), 0, 48, 18);
     if (maxAge < minAge) [minAge, maxAge] = [maxAge, minAge];
     const data = {
       title, minAge, maxAge,
       minutes: clampNum(fd.get("minutes"), 1, 120, 10),
-      skills, tags,
+      skills, tags, toys,
       materials: String(fd.get("materials") || "").split("\n").map((s) => s.trim()).filter(Boolean),
       how: String(fd.get("how") || "").trim(),
       safety: String(fd.get("safety") || "").trim(),
     };
     const id = form.dataset.id;
-    if (id) { Object.assign(act(id), data); toast("Saved"); }
+    if (id) { Object.assign(act(id), data, { edited: true }); toast("Saved"); }
     else { state.activities.push({ id: "c-" + uid(), custom: true, fav: false, ...data }); toast("Added to library"); }
     save();
     const nowAge = ageMonths().decimal;
@@ -864,11 +1161,40 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   if (todayKey() !== lastDay) { lastDay = todayKey(); }
   render();
+  checkForUpdate();
 });
+
+/* Updates ----------------------------------------------- */
+async function checkForUpdate() {
+  try {
+    const res = await fetch(`version.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const { version } = await res.json();
+    const next = version && version !== APP_VERSION ? version : null;
+    if (next !== ui.updateAvailable) { ui.updateAvailable = next; render(); }
+  } catch { /* offline */ }
+}
+
+async function hardRefresh() {
+  toast("Updating…");
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch { /* keep going */ }
+  location.replace(`${location.pathname}?v=${Date.now()}`);
+}
 
 render();
 if (!state.settings.birthdate) openSheet({ type: "settings" });
+if (location.search.includes("v=")) history.replaceState(null, "", location.pathname);
 
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
+checkForUpdate();
