@@ -2,7 +2,7 @@ import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS, MILESTONES } 
 import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-12";
+const APP_VERSION = "2026.10.14-13";
 
 /* =========================================================
    Storage
@@ -617,6 +617,7 @@ function viewPlan() {
     + `<div class="plan-actions">
         <button class="btn ${emptyDay ? "primary" : ""}" data-action="plan-day-auto" data-day="${k}">Plan ${isToday ? "today" : "tomorrow"} for me</button>
         <button class="btn" data-action="day-templates" data-day="${k}">${dayTpls.length ? "Use a template" : "Templates"}</button>
+        <button class="btn toys-day-btn" data-action="day-toys" data-day="${k}">${dayToysLabel(k)}</button>
       </div>`
     + (ui.clip ? `<div class="clip-bar"><span>Copied ${ui.clip.activities.length} from ${esc(ui.clip.label)}. Tap Paste on any window.</span><button class="btn small ghost" data-action="clip-clear">Done</button></div>` : "")
     + cards
@@ -1158,6 +1159,57 @@ function sheetDayTemplates({ day }) {
   return sheetShell("Day templates", body);
 }
 
+// Which toys a day's plan needs. For today, only activities not done yet count.
+function dayToyPlan(day) {
+  const plan = ensurePlan(day);
+  const isToday = day === todayKey();
+  const items = plan.windows.flatMap((w) => (isToday && w.endedAt ? [] : w.items)).filter((i) => !(isToday && i.done));
+  const uses = new Map(); // toyId -> activity titles
+  for (const it of items) {
+    const a = act(it.activityId);
+    for (const id of a?.toys || []) {
+      if (!toyById(id) || toyById(id).status === "retired") continue;
+      if (!uses.has(id)) uses.set(id, []);
+      if (!uses.get(id).includes(a.title)) uses.get(id).push(a.title);
+    }
+  }
+  const pullOut = [...uses.keys()].map(toyById).filter((t) => t.status !== "out");
+  const ready = [...uses.keys()].map(toyById).filter((t) => t.status === "out");
+  const putAway = toysOut().filter((t) => !uses.has(t.id));
+  return { uses, pullOut, ready, putAway };
+}
+function dayToysLabel(day) {
+  const { pullOut } = dayToyPlan(day);
+  const when = day === todayKey() ? "today" : "tomorrow";
+  return pullOut.length ? `Toys for ${when} · ${pullOut.length} to pull out` : `Toys for ${when}`;
+}
+
+function sheetDayToys({ day }) {
+  const { uses, pullOut, ready, putAway } = dayToyPlan(day);
+  const when = day === todayKey() ? "today" : "tomorrow";
+  const row = (t, verb) => {
+    const why = uses.get(t.id);
+    const sub = why ? `For ${why.slice(0, 2).map(esc).join(", ")}${why.length > 2 ? ` +${why.length - 2} more` : ""}`
+      : `Not in ${when}'s plan · out ${toyDaysOut(t)} ${toyDaysOut(t) === 1 ? "day" : "days"}`;
+    const on = t.status === "out";
+    return `<button class="pick ${verb === "out" ? (on ? "added" : "") : (on ? "" : "added")}" data-action="toy-toggle" data-id="${t.id}" data-stay="1">
+      <span class="grow"><strong>${esc(t.name)}</strong><div class="item-meta">${sub}</div></span>
+      <span class="plus">${verb === "out" ? (on ? "✓" : "+") : (on ? "–" : "✓")}</span></button>`;
+  };
+  const nothing = !uses.size && !putAway.length;
+  const body = nothing
+    ? `<div class="empty">None of ${when}'s planned activities use her toys${toysOut().length ? "" : ", and nothing is out right now"}.</div>`
+    : `
+    ${!uses.size ? `<p class="history">None of ${when}'s planned activities use her toys.</p>` : ""}
+    ${pullOut.length ? `<h4>Pull out (${pullOut.length})</h4><div class="pick-list">${pullOut.map((t) => row(t, "out")).join("")}</div>
+      <div class="btn-row"><button class="btn small primary" data-action="day-toys-apply" data-day="${day}" data-v="out">Mark all as out</button></div>` : ""}
+    ${ready.length ? `<h4>Already out (${ready.length})</h4><div class="pick-list">${ready.map((t) => row(t, "out")).join("")}</div>` : ""}
+    ${putAway.length ? `<h4>Can put away (${putAway.length})</h4><p class="history">Out, but not used by anything ${when}. Hiding them keeps play focused; skip any she's into.</p>
+      <div class="pick-list">${putAway.map((t) => row(t, "away")).join("")}</div>
+      <div class="btn-row"><button class="btn small" data-action="day-toys-apply" data-day="${day}" data-v="away">Put all away</button></div>` : ""}`;
+  return sheetShell(`Toys for ${when}`, body);
+}
+
 function sheetToyForm({ id }) {
   const t = id ? toyById(id) : { name: "", brand: "" };
   const body = `<form data-form="toy" data-id="${id || ""}">
@@ -1189,7 +1241,7 @@ function renderSheet() {
   const s = ui.sheet;
   if (!s) { root.innerHTML = ""; document.body.style.overflow = ""; return; }
   const prevScroll = $(".sheet", root)?.scrollTop || 0;
-  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, signin: sheetSignIn, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm, skillPick: sheetSkillPick, times: sheetTimes, rotationSettings: sheetRotationSettings, milestones: sheetMilestones, milestoneEdit: sheetMilestoneEdit, recap: sheetRecap, windowMenu: sheetWindowMenu, dayTemplates: sheetDayTemplates, backups: sheetBackups };
+  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, signin: sheetSignIn, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm, skillPick: sheetSkillPick, times: sheetTimes, rotationSettings: sheetRotationSettings, milestones: sheetMilestones, milestoneEdit: sheetMilestoneEdit, recap: sheetRecap, windowMenu: sheetWindowMenu, dayTemplates: sheetDayTemplates, backups: sheetBackups, dayToys: sheetDayToys };
   root.innerHTML = map[s.type](s);
   document.body.style.overflow = "hidden";
   const sheet = $(".sheet", root);
@@ -1509,6 +1561,13 @@ const actions = {
     if (first) toast("Activities now match what she can do");
   },
 
+  "day-toys": (d) => openSheet({ type: "dayToys", day: d.day }),
+  "day-toys-apply": (d) => {
+    const { pullOut, putAway } = dayToyPlan(d.day);
+    const list = d.v === "out" ? pullOut : putAway;
+    for (const t of list) setToyStatus(t, d.v === "out" ? "out" : "stored");
+    save(); render(); refreshSheet();
+  },
   "toggle-window": (d) => { ui.expanded.has(d.win) ? ui.expanded.delete(d.win) : ui.expanded.add(d.win); render(); },
   "window-menu": (d) => openSheet({ type: "windowMenu", day: d.day, win: d.win }),
   "copy-window": (d) => {
@@ -1674,6 +1733,7 @@ const UNDOABLE = {
   "plan-tomorrow": "Tomorrow planned",
   swap: "Swapped",
   "delete-day-template": "Template deleted",
+  "day-toys-apply": (d) => (d.v === "out" ? "Toys marked as out" : "Toys put away"),
   "delete-window-template": "Template deleted",
 };
 
