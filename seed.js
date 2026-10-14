@@ -3,7 +3,7 @@
 // Skills: gross, fine, language, sensory, social, cognitive.
 // To add new starter activities later, append here with a new unique id and bump SEED_VERSION.
 
-export const SEED_VERSION = 3;
+export const SEED_VERSION = 4;
 
 // Starter activities removed in later versions (dropped from saved libraries unless edited).
 export const REMOVED_SEED_IDS = ["t-lovevery-rotate"];
@@ -184,11 +184,11 @@ export const SEED = [
     skills: ["sensory", "social"],
     how: "Float a silk down over her, swish it across her hands and toes, and play peekaboo through it.",
     safety: "Put silks away after play." },
-  { id: "s-textures", title: "Texture tour", minAge: 6, maxAge: 12, minutes: 10,
-    materials: ["Crinkle paper", "Velvet", "Bubble wrap", "Sponge", "Faux fur"],
+  { id: "s-textures", toys: ["t-sensory-tiles"], tags: ["her-toys"], title: "Texture tour", minAge: 6, maxAge: 12, minutes: 10,
+    materials: ["Sensory tiles", "Optional: crinkle paper, a sponge"],
     skills: ["sensory", "language"],
     how: "Let her touch one texture at a time while you describe it: soft, bumpy, crinkly, scratchy. Try her hands and her feet.",
-    safety: "Bubble wrap is supervised-touch only and goes away after." },
+    safety: "" },
   { id: "s-yogurt-paint", title: "Yogurt painting", minAge: 8, maxAge: 18, minutes: 10,
     materials: ["Plain yogurt", "High chair tray", "Optional: a drop of fruit purée for color"],
     skills: ["sensory", "fine"],
@@ -429,6 +429,31 @@ export const SEED = [
     skills: ["social", "language", "cognitive"],
     how: "Cook pretend eggs together and serve them to you, her, and a stuffed animal. Say \"yum\" and \"thank you.\" Pretend play grows fast after her first birthday.",
     safety: "" },
+  { id: "t-tiles-tummy", toys: ["t-sensory-tiles"], title: "Texture tummy time", minAge: 5, maxAge: 9, minutes: 10, tags: ["her-toys"],
+    materials: ["Sensory tiles"],
+    skills: ["sensory", "gross"],
+    how: "Lay three or four tiles in an arc in front of her during tummy time. She pats, scratches, and reaches for different textures. Swap in new tiles when she loses interest.",
+    safety: "" },
+  { id: "t-tiles-path", toys: ["t-sensory-tiles"], title: "Texture trail", minAge: 7, maxAge: 15, minutes: 10, tags: ["her-toys"],
+    materials: ["Sensory tiles", "A favorite toy"],
+    skills: ["gross", "sensory", "language"],
+    how: "Lay the tiles in a path with a toy at the end. As she crawls across, name each texture: bumpy, soft, smooth, scratchy. Rearrange the order next time.",
+    safety: "Lay tiles on a rug so they don't slide." },
+  { id: "t-tiles-hide", toys: ["t-sensory-tiles"], title: "What's under the tile?", minAge: 8, maxAge: 14, minutes: 5, tags: ["her-toys"],
+    materials: ["Sensory tiles", "A small toy"],
+    skills: ["cognitive", "fine"],
+    how: "While she watches, hide a toy under one tile. Let her lift it to find the toy. Add a second tile so she has to remember which one.",
+    safety: "Use a toy too big to be a choking hazard." },
+  { id: "t-tiles-choose", toys: ["t-sensory-tiles"], title: "Pick a texture", minAge: 9, maxAge: 18, minutes: 5, tags: ["her-toys"],
+    materials: ["Sensory tiles"],
+    skills: ["social", "sensory", "language"],
+    how: "Hold up two very different tiles and let her touch both, then ask which she wants. Notice which textures she loves and which she pulls away from, and name her reaction: \"You don't like scratchy!\"",
+    safety: "" },
+  { id: "t-tiles-feet", toys: ["t-sensory-tiles"], title: "Barefoot textures", minAge: 9, maxAge: 18, minutes: 10, tags: ["her-toys"],
+    materials: ["Sensory tiles"],
+    skills: ["sensory", "gross"],
+    how: "Lay tiles where she cruises or stands so her bare feet touch new textures. Once walking, hold her hands as she steps from tile to tile.",
+    safety: "Tiles can slide on hard floors; use them on a rug." },
   // ---------- Household items: emotional, behavioral, cognitive, physical ----------
   { id: "h-goodbye-ritual", title: "Bye-bye, I'm back", minAge: 7, maxAge: 18, minutes: 5, tags: ["household"],
     materials: [],
@@ -602,6 +627,7 @@ export const TOYS = [
   { id: "t-warmies", name: "Warmies sloth and dachshund", brand: "Warmies", status: "stored" },
   { id: "t-kick-gym", name: "Kick & Play gym", brand: "Fisher-Price", status: "stored" },
   { id: "t-water-mat", name: "Water mat", brand: "", status: "stored" },
+  { id: "t-sensory-tiles", name: "Sensory tiles (12 textures)", brand: "", status: "stored" },
   { id: "t-board-books", name: "Board books", brand: "", status: "stored" },
   { id: "t-lovevery-inspector", name: "The Inspector play kit", brand: "Lovevery", status: "stored" },
   { id: "t-lovevery-senser", name: "The Senser play kit", brand: "Lovevery", status: "stored" },

@@ -1,7 +1,7 @@
 import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS } from "./seed.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-3";
+const APP_VERSION = "2026.10.14-4";
 
 /* =========================================================
    Storage
