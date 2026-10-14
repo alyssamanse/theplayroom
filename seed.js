@@ -3,7 +3,7 @@
 // Skills: gross, fine, language, sensory, social, cognitive.
 // To add new starter activities later, append here with a new unique id and bump SEED_VERSION.
 
-export const SEED_VERSION = 9;
+export const SEED_VERSION = 10;
 
 // Starter activities removed in later versions (dropped from saved libraries unless edited).
 export const REMOVED_SEED_IDS = ["t-lovevery-rotate"];
@@ -615,6 +615,17 @@ export const SEED = [
     skills: ["social", "cognitive"],
     how: "Press a button and make a big happy face, then point to her turn. Take turns back and forth. When the music plays, bounce or clap along together.",
     safety: "" },
+  // ---------- Routines ----------
+  { id: "r-brush-teeth", title: "Brushing teeth", minAge: 6, maxAge: 18, minutes: 5, tags: ["routines"],
+    materials: ["Soft infant toothbrush or finger brush", "Fluoride toothpaste (a rice-grain smear)", "Or a soft damp cloth before teeth come in"],
+    skills: ["sensory", "social", "fine"],
+    how: "Make it a twice-a-day ritual with a song. Before teeth arrive, wipe her gums with a damp cloth. Once a tooth appears, brush gently with a rice-grain smear of fluoride toothpaste. Brush your own teeth beside her so she can copy you in the mirror.",
+    safety: "Use only a rice-grain amount of toothpaste under age 3. Stay with her the whole time." },
+  { id: "r-her-turn-brush", title: "Her turn to brush", minAge: 7, maxAge: 18, minutes: 5, tags: ["routines"],
+    materials: ["Baby training toothbrush with a wide handle and safety shield"],
+    skills: ["fine", "sensory", "cognitive"],
+    how: "Let her hold her own training brush and chew or move it around her mouth while you brush yours. Then take a turn with a second brush to do a real clean. Holding the brush herself makes the routine something she wants to do.",
+    safety: "Only while seated and supervised; never let her crawl or walk with a toothbrush in her mouth." },
   // ---------- Household items: emotional, behavioral, cognitive, physical ----------
   { id: "h-tape-pull", title: "Tape pull", minAge: 9, maxAge: 18, minutes: 10, tags: ["household"],
     materials: ["Masking or painter's tape", "High chair tray or floor"],
@@ -852,6 +863,7 @@ export const TAGS = {
   "household": { label: "Household items" },
   "outings":   { label: "Outings" },
   "mealtime":  { label: "Mealtime" },
+  "routines":  { label: "Routines" },
 };
 
 export const SKILLS = {
