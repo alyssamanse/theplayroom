@@ -11,7 +11,9 @@ Vanilla JS home-screen web app (no build step), hosted on GitHub Pages from `mai
 - Starter content lives in seed.js. When adding or changing starter activities or toys, bump `SEED_VERSION`.
   Unedited starter activities are replaced with the new definitions on load; edited ones (`edited: true`) and custom ones are kept.
   To drop a starter activity, list its id in `REMOVED_SEED_IDS`.
-- Activities link to toys via `toys: [toyId]` (ids in `TOYS`).
+- Activities link to toys via `toys: [toyId]` (ids in `TOYS`) and to milestones via `needs: [milestoneId]` (ids in `MILESTONES`).
+  Milestone gating only applies once `milestonesSetup` is true.
+- Templates live in `state.templates.days` / `.windows`.
 - Toy list comes from Merritt's Closet (Firestore doc `wishlists/w_f6Un6k7se0dvifVErHRe`, field `toys`).
 
 ## Sync (sync.js)

@@ -495,3 +495,74 @@ h3 { font-size: 16px; font-weight: 700; margin: 0; }
 .skill-gaps .chip { display: inline-flex; align-items: center; gap: 6px; }
 button.day-row { width: 100%; border: 0; text-align: left; }
 .reactions .chip { padding: 6px 10px; }
+
+/* ---------- Now: quick links, notices ---------- */
+.quick-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.quick {
+  display: grid; gap: 2px; text-align: left;
+  border: 0; border-radius: var(--radius-md);
+  background: var(--surface); padding: 12px 14px;
+}
+.notice {
+  background: color-mix(in srgb, var(--fine) 16%, var(--surface));
+  border-radius: var(--radius-md);
+  padding: 12px 14px; margin-bottom: 12px; font-size: 15px;
+}
+.notice p { margin: 0; }
+.notice .btn-row { margin-top: 8px; }
+
+/* ---------- Plan: actions, clipboard, drag ---------- */
+.plan-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.clip-bar {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1.5px dashed var(--sensory);
+  border-radius: var(--radius-md); padding: 8px 8px 8px 14px; margin-bottom: 12px;
+  font-size: 14px; font-weight: 600;
+}
+.clip-bar span { flex: 1; }
+.card-head .more { background: none; border: 0; padding: 4px; color: var(--muted); margin-left: 4px; }
+.card-head .more svg { width: 20px; height: 20px; fill: currentColor; }
+.item.draggable { grid-template-columns: 22px 34px 1fr auto; gap: 8px; }
+.item.draggable .reactions { grid-column: 3 / -1; }
+.grip {
+  display: grid; place-items: center;
+  width: 22px; height: 40px; margin-left: -4px;
+  color: var(--muted); cursor: grab;
+  touch-action: none; -webkit-user-select: none; user-select: none;
+}
+.grip svg { width: 18px; height: 18px; fill: currentColor; }
+.drag-ghost {
+  position: fixed; z-index: 40; margin: 0; pointer-events: none;
+  background: var(--surface) !important;
+  box-shadow: 0 14px 30px -10px rgba(31, 42, 68, .45);
+  transform: scale(1.02);
+}
+.drag-placeholder { opacity: .35; outline: 2px dashed var(--line); outline-offset: -2px; }
+.list.drop { min-height: 8px; }
+.list .empty-li { margin-top: 0; list-style: none; }
+.list:has(.item) .empty-li { display: none; }
+
+/* ---------- Library ---------- */
+.lib-item.later { opacity: .75; }
+.lock { color: var(--ink-2); font-style: italic; }
+
+/* ---------- Recap ---------- */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.stats div { background: var(--paper); border-radius: var(--radius-sm); padding: 10px; display: grid; }
+.stats strong { font-family: var(--font-display); font-weight: 400; font-size: 22px; }
+.stats span { font-size: 13px; color: var(--muted); }
+.bars { display: grid; gap: 6px; }
+.bar-row { display: grid; grid-template-columns: 112px 1fr 24px; align-items: center; gap: 8px; font-size: 14px; }
+.bar { height: 10px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: inherit; }
+.bar-row .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+
+/* ---------- Menus and templates ---------- */
+.menu { display: grid; gap: 6px; margin-top: 8px; }
+.menu .pick[disabled] { opacity: .45; }
+.tpl-row { display: flex; align-items: center; gap: 8px; }
+.tpl-row .grow { flex: 1; min-width: 0; }
+
+/* ---------- Toast with undo ---------- */
+#toast.has-action { pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 16px; }
+#toast button { background: var(--on-primary); color: var(--primary); border: 0; border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: 14px; }

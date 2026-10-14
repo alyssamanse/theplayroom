@@ -7,6 +7,8 @@
 //   playrooms/family/days/{date}     { date, json, updatedAt, updatedBy }   that day's windows
 // Access is limited by Firestore rules to an allowlist of verified family emails.
 
+import { merge3 } from "./merge.js";
+
 const SDK = "https://www.gstatic.com/firebasejs/10.14.1/";
 
 export const firebaseConfig = {
@@ -54,6 +56,9 @@ const mainPart = (s) => JSON.stringify({
   hiddenSeedIds: s.hiddenSeedIds,
   toys: s.toys,
   hiddenToyIds: s.hiddenToyIds,
+  milestones: s.milestones,
+  milestonesSetup: s.milestonesSetup,
+  templates: s.templates,
 });
 
 /* ---------- SDK ---------- */
@@ -142,6 +147,8 @@ export async function signOut() {
 }
 
 // Called by the app after every local save.
+if (typeof window !== "undefined") window.addEventListener("online", () => schedulePush());
+
 export function schedulePush() {
   if (!live) return;
   clearTimeout(pushTimer);
@@ -199,8 +206,8 @@ async function initialSync(u) {
     }
     hooks.applyMain(main);
     const merged = mainPart(hooks.getState());
-    if (merged !== mainSnap.data().json) writes.push(["main", merged]);
-    else lastMain = merged;
+    lastMain = mainSnap.data().json; // the server copy is the shared starting point
+    if (merged !== lastMain) writes.push(["main", merged]);
 
     // Days: remote wins unless this phone has unsent changes for that day.
     const pending = new Set(meta.pendingDays);
@@ -225,26 +232,64 @@ async function initialSync(u) {
 const itemCount = (p) => (p?.windows || []).reduce((n, w) => n + w.items.length + (w.startedAt ? 1 : 0), 0);
 
 /* ---------- writes ---------- */
+// Writes run in a transaction: if the server copy changed since we last saw it
+// (another phone saved in the meantime), both sets of changes are merged.
+const inflight = new Set();
+
 function writeMain(json) {
-  lastMain = json;
+  if (inflight.has("main")) return;
+  inflight.add("main");
   meta.pendingMain = true; saveMeta(meta);
-  return sdk.fs.setDoc(mainRef(), { json, updatedAt: sdk.fs.serverTimestamp(), updatedBy: user?.email || "" })
-    .then(() => {
-      if (lastMain === json) { meta.pendingMain = false; saveMeta(meta); }
-      setStatus({ state: "synced", lastSynced: new Date().toISOString(), error: null });
-    })
-    .catch(onWriteError);
+  const base = lastMain;
+  return sdk.fs.runTransaction(db, async (tx) => {
+    const snap = await tx.get(mainRef());
+    const remote = snap.exists() ? snap.data().json : null;
+    let out = json;
+    if (remote && remote !== base && remote !== json) {
+      out = JSON.stringify(merge3(base ? JSON.parse(base) : undefined, JSON.parse(json), JSON.parse(remote)));
+    }
+    tx.set(mainRef(), { json: out, updatedAt: sdk.fs.serverTimestamp(), updatedBy: user?.email || "" });
+    return out;
+  }).then((out) => {
+    lastMain = out;
+    const now = mainPart(hooks.getState());
+    if (out !== json) {
+      // The merge brought in another phone's changes; fold in anything typed since.
+      const merged = now === json ? JSON.parse(out) : merge3(JSON.parse(json), JSON.parse(now), JSON.parse(out));
+      hooks.applyMain(merged);
+      hooks.afterRemote();
+    }
+    if (mainPart(hooks.getState()) === out) { meta.pendingMain = false; saveMeta(meta); }
+    setStatus({ state: "synced", lastSynced: new Date().toISOString(), error: null });
+  }).catch(onWriteError).finally(() => { inflight.delete("main"); schedulePush(); });
 }
 
 function writeDay(k, json) {
-  lastDays.set(k, json);
+  if (inflight.has(k)) return;
+  inflight.add(k);
   if (!meta.pendingDays.includes(k)) { meta.pendingDays.push(k); saveMeta(meta); }
-  return sdk.fs.setDoc(dayRef(k), { date: k, json, updatedAt: sdk.fs.serverTimestamp(), updatedBy: user?.email || "" })
-    .then(() => {
-      if (lastDays.get(k) === json) { meta.pendingDays = meta.pendingDays.filter((d) => d !== k); saveMeta(meta); }
-      setStatus({ state: "synced", lastSynced: new Date().toISOString(), error: null });
-    })
-    .catch(onWriteError);
+  const base = lastDays.get(k);
+  return sdk.fs.runTransaction(db, async (tx) => {
+    const snap = await tx.get(dayRef(k));
+    const remote = snap.exists() ? snap.data().json : null;
+    let out = json;
+    if (remote && remote !== base && remote !== json) {
+      out = JSON.stringify(merge3(base ? JSON.parse(base) : undefined, JSON.parse(json), JSON.parse(remote)));
+    }
+    tx.set(dayRef(k), { date: k, json: out, updatedAt: sdk.fs.serverTimestamp(), updatedBy: user?.email || "" });
+    return out;
+  }).then((out) => {
+    lastDays.set(k, out);
+    const plan = hooks.getState().plans[k];
+    const now = plan ? JSON.stringify(plan) : json;
+    if (out !== json) {
+      const merged = now === json ? JSON.parse(out) : merge3(JSON.parse(json), JSON.parse(now), JSON.parse(out));
+      hooks.applyDay(k, merged);
+      hooks.afterRemote();
+    }
+    if (JSON.stringify(hooks.getState().plans[k]) === out) { meta.pendingDays = meta.pendingDays.filter((d) => d !== k); saveMeta(meta); }
+    setStatus({ state: "synced", lastSynced: new Date().toISOString(), error: null });
+  }).catch(onWriteError).finally(() => { inflight.delete(k); schedulePush(); });
 }
 
 function onWriteError(e) {
@@ -270,10 +315,14 @@ function listen() {
   unsubs.push(fs.onSnapshot(mainRef(), (snap) => {
     if (!snap.exists() || snap.metadata.hasPendingWrites) return;
     const json = snap.data().json;
-    if (json === lastMain || meta.pendingMain) return;
+    if (json === lastMain || inflight.has("main")) return;
+    const base = lastMain;
+    const local = mainPart(hooks.getState());
     lastMain = json;
-    hooks.applyMain(JSON.parse(json));
+    // Keep any edits made here that haven't gone up yet.
+    hooks.applyMain(local === base || !base ? JSON.parse(json) : merge3(JSON.parse(base), JSON.parse(local), JSON.parse(json)));
     hooks.afterRemote();
+    if (mainPart(hooks.getState()) !== json) schedulePush();
     setStatus({ state: "synced", lastSynced: new Date().toISOString() });
   }, onWriteError));
   unsubs.push(fs.onSnapshot(daysCol(), (snap) => {
@@ -282,9 +331,13 @@ function listen() {
     for (const ch of snap.docChanges()) {
       if (ch.type === "removed") continue;
       const k = ch.doc.id, json = ch.doc.data().json;
-      if (json === lastDays.get(k) || meta.pendingDays.includes(k)) continue;
+      if (json === lastDays.get(k) || inflight.has(k)) continue;
+      const base = lastDays.get(k);
+      const plan = hooks.getState().plans[k];
+      const local = plan ? JSON.stringify(plan) : null;
       lastDays.set(k, json);
-      hooks.applyDay(k, JSON.parse(json));
+      hooks.applyDay(k, !local || local === base || !base ? JSON.parse(json) : merge3(JSON.parse(base), JSON.parse(local), JSON.parse(json)));
+      if (JSON.stringify(hooks.getState().plans[k]) !== json) schedulePush();
       changed = true;
     }
     if (changed) { hooks.afterRemote(); setStatus({ state: "synced", lastSynced: new Date().toISOString() }); }
