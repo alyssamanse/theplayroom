@@ -21,3 +21,7 @@ Vanilla JS home-screen web app (no build step), hosted on GitHub Pages from `mai
 - localStorage stays the source of truth on each phone; sync mirrors it. Unsent changes are tracked in localStorage `playroom.sync`.
 - Access is controlled only by Firestore rules (allowlist of verified emails). Lys and Michael both have full edit access.
 - Firebase SDK loads from gstatic only after sign-in, so the app works with no network.
+
+## Deploying
+- GitHub Pages deploys can fail when pushes overlap. Batch changes into one push when possible, then check
+  `gh api "repos/alyssamanse/theplayroom/actions/runs?per_page=3"` and confirm the live `version.json` matches.

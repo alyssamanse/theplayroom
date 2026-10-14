@@ -2,7 +2,7 @@ import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS, MILESTONES } 
 import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-17";
+const APP_VERSION = "2026.10.14-18";
 
 /* =========================================================
    Storage
@@ -2064,6 +2064,9 @@ async function hardRefresh() {
       const keys = await caches.keys();
       await Promise.all(keys.map((k) => caches.delete(k)));
     }
+    // The browser keeps its own copy of each file for a few minutes; ask for fresh ones.
+    const files = ["./", "index.html", "app.js", "seed.js", "sync.js", "merge.js", "styles.css", "sw.js", "manifest.webmanifest", "version.json"];
+    await Promise.all(files.map((f) => fetch(f, { cache: "reload" }).catch(() => {})));
   } catch { /* keep going */ }
   location.replace(`${location.pathname}?v=${Date.now()}`);
 }

@@ -1,9 +1,9 @@
 // Network-first service worker: fresh code whenever online, cached copy when offline.
-const CACHE = "playroom-v5";
+const CACHE = "playroom-v6";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "seed.js", "sync.js", "merge.js", "version.json", "manifest.webmanifest", "icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
