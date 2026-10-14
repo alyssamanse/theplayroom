@@ -3,7 +3,7 @@
 // Skills: gross, fine, language, sensory, social, cognitive.
 // To add new starter activities later, append here with a new unique id and bump SEED_VERSION.
 
-export const SEED_VERSION = 6;
+export const SEED_VERSION = 7;
 
 // Starter activities removed in later versions (dropped from saved libraries unless edited).
 export const REMOVED_SEED_IDS = ["t-lovevery-rotate"];
@@ -542,6 +542,58 @@ export const SEED = [
     skills: ["language", "social"],
     how: "Talk about where you're going and what you'll do: \"We're going to see Grandma, then home for lunch.\" When she babbles, answer back as if it's a conversation.",
     safety: "" },
+  { id: "o-stroller-walk", title: "Stroller walk", minAge: 0, maxAge: 18, minutes: 20, tags: ["outings"],
+    materials: ["Stroller"],
+    skills: ["sensory", "language"],
+    how: "Walk somewhere with things to see: trees, dogs, other people. Stop every so often to point and name things. Face her toward you for part of the walk so you can talk and make faces.",
+    safety: "Shade her from direct sun and dress her a layer warmer than you." },
+  { id: "o-stroller-stops", title: "Stop and touch walk", minAge: 6, maxAge: 18, minutes: 20, tags: ["outings"],
+    materials: ["Stroller"],
+    skills: ["sensory", "language", "cognitive"],
+    how: "On your walk, stop at three things she can touch: a leaf, a fence, a flower. Name each one and how it feels. Next time, stop at the same spots and see if she remembers.",
+    safety: "Watch that leaves and petals don't go in her mouth." },
+  { id: "o-restaurant", title: "Restaurant outing", minAge: 6, maxAge: 18, minutes: 45, tags: ["outings"],
+    materials: ["High chair or lap", "Bib", "Safe finger foods"],
+    skills: ["social", "sensory", "language"],
+    how: "Go at a quieter time and pick a seat where she can watch people. Name what she sees and hears, and offer safe bites from your plate or her own foods. Short outings that end before she's tired go best.",
+    safety: "Wipe the high chair and table, and offer only foods she's already eating safely." },
+  { id: "o-restaurant-play", title: "Restaurant table play", minAge: 8, maxAge: 18, minutes: 10, tags: ["outings"],
+    materials: ["Two small toys from home", "Napkin"],
+    skills: ["fine", "social", "cognitive"],
+    how: "Bring one or two quiet toys only for restaurants. Play peekaboo with a napkin, stack cups, or let her explore a clean spoon. Bring out a new toy when she gets restless.",
+    safety: "Move knives, hot drinks, and glassware out of reach." },
+  { id: "o-visit", title: "Family and friend visit", minAge: 4, maxAge: 18, minutes: 30, tags: ["outings"],
+    materials: ["A favorite toy from home"],
+    skills: ["social", "language"],
+    how: "Give her a few minutes in your arms to warm up before handing her over. Tell her who everyone is: \"This is Aunt Erica!\" A familiar toy helps her feel safe in a new place.",
+    safety: "Ask visitors to wash hands, and check the floor for small objects before she crawls." },
+  { id: "o-video-call", title: "Video call with family", minAge: 4, maxAge: 18, minutes: 10, tags: ["outings"],
+    materials: ["Phone or tablet"],
+    skills: ["social", "language"],
+    how: "Video calls with loved ones are the screen time experts recommend. Let her see faces, wave, and hear familiar voices. Hold her on your lap so she sees you talking, too.",
+    safety: "" },
+
+  // ---------- Mealtime ----------
+  { id: "m-family-meal", title: "Family mealtime", minAge: 6, maxAge: 18, minutes: 20, tags: ["mealtime"],
+    materials: ["High chair pulled up to the table", "Her food"],
+    skills: ["social", "language", "sensory"],
+    how: "Eat together at the table when you can. She learns by watching you chew, use a spoon, and talk. Name the foods, describe tastes and textures, and keep it relaxed.",
+    safety: "Sit with her the whole meal and offer only age-safe foods." },
+  { id: "m-open-cup", title: "Open cup sips", minAge: 6, maxAge: 18, minutes: 5, tags: ["mealtime"],
+    materials: ["Small open cup", "A little water"],
+    skills: ["fine", "sensory"],
+    how: "Put a sip or two of water in a small open cup. Hold it with her at first and tip slowly; let her try holding it herself. Spills are part of learning.",
+    safety: "Only a small amount of water at a time." },
+  { id: "m-food-talk", title: "Name that food", minAge: 6, maxAge: 18, minutes: 5, tags: ["mealtime"],
+    materials: ["Her meal"],
+    skills: ["language", "cognitive"],
+    how: "Name each food as you offer it, with one describing word: \"Soft avocado. Crunchy toast.\" Ask \"More?\" and wait for a sign, sound, or reach before giving more.",
+    safety: "" },
+  { id: "m-spoon-practice", title: "Spoon practice", minAge: 7, maxAge: 18, minutes: 10, tags: ["mealtime"],
+    materials: ["Preloaded spoon", "Thick purée or yogurt"],
+    skills: ["fine", "cognitive"],
+    how: "Load a spoon and hand it to her, handle first. She'll steer it to her mouth (or her cheek). Keep a second spoon so you can reload while she practices.",
+    safety: "" },
   // ---------- Household items: emotional, behavioral, cognitive, physical ----------
   { id: "h-tape-pull", title: "Tape pull", minAge: 9, maxAge: 18, minutes: 10, tags: ["household"],
     materials: ["Masking or painter's tape", "High chair tray or floor"],
@@ -753,7 +805,8 @@ export const TOYS = [
 export const TAGS = {
   "her-toys":  { label: "Her toys" },
   "household": { label: "Household items" },
-  "outings":   { label: "Errands and car rides" },
+  "outings":   { label: "Outings" },
+  "mealtime":  { label: "Mealtime" },
 };
 
 export const SKILLS = {
