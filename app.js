@@ -2,7 +2,7 @@ import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS, MILESTONES } 
 import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-9";
+const APP_VERSION = "2026.10.14-10";
 
 /* =========================================================
    Storage
@@ -395,7 +395,7 @@ function stacker(k) {
     else planned[s] = (planned[s] || 0) + 1;
   }
   // Ring shade: planned only = pale; each completed activity deepens it, full color at 3.
-  const shade = (sk) => counts[sk] ? [0, 0.55, 0.78, 1][Math.min(counts[sk], 3)] : planned[sk] ? 0.28 : 0;
+  const shade = (sk) => (counts[sk] ? [0, 0.55, 0.78, 1][Math.min(counts[sk], 3)] : 0);
   const order = ["gross", "fine", "sensory", "language", "social", "cognitive"]; // bottom to top
   const widths = [124, 110, 96, 82, 68, 54];
   const practiced = order.filter((s) => counts[s]).length;
@@ -404,7 +404,7 @@ function stacker(k) {
     : practiced === 0 ? "Rings fill in as you check off activities. Add an activity for any skill:"
     : "Not done yet today. Tap a skill to add an activity for it:";
   return `<section class="stacker-wrap" aria-label="Skills practiced today">
-    <div class="stacker" aria-hidden="true">${order.map((s, i) => `<span class="ring ${shade(s) ? "on" : ""}" style="width:${widths[i]}px">${shade(s) ? `<i style="background:var(--${s});opacity:${shade(s)}"></i>` : ""}</span>`).join("")}</div>
+    <div class="stacker" aria-hidden="true">${order.map((s, i) => `<span class="ring ${shade(s) ? "on" : planned[s] ? "planned" : ""}" style="--c:var(--${s});width:${widths[i]}px">${shade(s) ? `<i style="background:var(--${s});opacity:${shade(s)}"></i>` : ""}</span>`).join("")}</div>
     <ul class="legend">${[...order].reverse().map((s) => `<li class="${counts[s] ? "on" : planned[s] ? "planned" : ""}"><i class="dot" style="background:var(--${s})"></i>${SKILLS[s].label}<span class="n">${counts[s] ? `${counts[s]} done` : planned[s] ? `${planned[s]} planned` : ""}</span></li>`).join("")}</ul>
     <p class="stacker-note">${note}</p>
     ${missing.length ? `<div class="skill-gaps">${missing.map((sk) => `<button class="chip" data-action="skill-pick" data-skill="${sk}" data-day="${k}"><i class="dot" style="background:var(--${sk})"></i>${SKILLS[sk].label}${planned[sk] ? " · planned" : ""}</button>`).join("")}</div>` : ""}

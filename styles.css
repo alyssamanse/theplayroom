@@ -566,3 +566,10 @@ button.day-row { width: 100%; border: 0; text-align: left; }
 /* ---------- Toast with undo ---------- */
 #toast.has-action { pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 16px; }
 #toast button { background: var(--on-primary); color: var(--primary); border: 0; border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: 14px; }
+
+/* Planned but not done: a see-through ring so the post shows behind it. */
+.stacker .ring.planned { border: 0; background: transparent; }
+.stacker .ring.planned::before,
+.stacker .ring.planned::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.stacker .ring.planned::before { background: var(--c); opacity: .16; }
+.stacker .ring.planned::after { border: 1.5px solid var(--c); opacity: .55; }
