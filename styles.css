@@ -573,3 +573,16 @@ button.day-row { width: 100%; border: 0; text-align: left; }
 .stacker .ring.planned::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
 .stacker .ring.planned::before { background: var(--c); opacity: .16; }
 .stacker .ring.planned::after { border: 1.5px solid var(--c); opacity: .55; }
+
+/* ---------- Collapsed finished windows ---------- */
+.card.collapsed { padding: 0; }
+.collapse-toggle {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: none; border: 0; text-align: left; padding: 14px 16px;
+}
+.collapse-toggle .grow { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.card-title { font-family: var(--font-display); font-size: 20px; }
+.card.collapsed .card-title { color: var(--ink-2); }
+.chev svg, .card-head .chev svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chev { color: var(--muted); display: grid; place-items: center; }
+.card-head .chev.up svg { transform: rotate(180deg); }

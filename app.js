@@ -2,7 +2,7 @@ import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS, MILESTONES } 
 import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-10";
+const APP_VERSION = "2026.10.14-11";
 
 /* =========================================================
    Storage
@@ -107,6 +107,7 @@ const ui = {
   openReactions: new Set(), // item ids showing reaction chips
   addMode: "plan",           // "plan" adds to the plan; "done" logs it as already done
   clip: null,                // copied window activities { label, activities: [ids] }
+  expanded: new Set(),       // finished windows the person opened on the Plan tab
 };
 
 /* =========================================================
@@ -354,6 +355,7 @@ const I = {
   check: `<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
   more: `<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>`,
   close: `<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+  chev: `<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`,
   grip: `<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>`,
 };
 
@@ -578,11 +580,22 @@ function viewPlan() {
   const cards = plan.windows.map((w) => {
     const mins = windowMinutes(w);
     const status = w.endedAt ? `Done · ${fmtTime(w.startedAt)}–${fmtTime(w.endedAt)}` : w.startedAt ? `Happening now · since ${fmtTime(w.startedAt)}` : "";
-    return `<section class="card" data-win="${w.id}">
+    if (w.endedAt && !ui.expanded.has(w.id)) {
+      const doneCount = w.items.filter((i) => i.done).length;
+      return `<section class="card collapsed" data-win="${w.id}">
+        <button class="collapse-toggle" data-action="toggle-window" data-win="${w.id}" aria-expanded="false">
+          <span class="grow"><span class="card-title">${esc(w.label)}</span>
+          <span class="item-meta">${fmtTime(w.startedAt)}–${fmtTime(w.endedAt)} · ${doneCount} of ${w.items.length} done ${skillDots([...new Set(w.items.filter((i) => i.done).flatMap((i) => act(i.activityId)?.skills || []))])}</span></span>
+          <span class="chev" aria-hidden="true">${I.chev}</span>
+        </button>
+      </section>`;
+    }
+    return `<section class="card ${w.endedAt ? "expanded" : ""}" data-win="${w.id}">
       <div class="card-head">
         <button class="rename" data-action="rename" data-day="${k}" data-win="${w.id}" aria-label="Rename ${esc(w.label)}">${esc(w.label)}</button>
         <span class="mins">${mins ? fmtMin(mins) : ""}</span>
         <button class="more" data-action="window-menu" data-day="${k}" data-win="${w.id}" aria-label="${esc(w.label)} options">${I.more}</button>
+        ${w.endedAt ? `<button class="more chev up" data-action="toggle-window" data-win="${w.id}" aria-expanded="true" aria-label="Collapse ${esc(w.label)}">${I.chev}</button>` : ""}
       </div>
       <button class="status link" data-action="edit-times" data-day="${k}" data-win="${w.id}">${status || (isToday ? "Log wake and nap times" : "")}</button>
       <ul class="list drop" data-day="${k}" data-win="${w.id}">${w.items.map((it) => itemRow(k, w, it, { reactions: true, drag: true })).join("")}<li class="empty empty-li">Empty window. Drag activities here or add some.</li></ul>
@@ -1471,6 +1484,7 @@ const actions = {
     if (first) toast("Activities now match what she can do");
   },
 
+  "toggle-window": (d) => { ui.expanded.has(d.win) ? ui.expanded.delete(d.win) : ui.expanded.add(d.win); render(); },
   "window-menu": (d) => openSheet({ type: "windowMenu", day: d.day, win: d.win }),
   "copy-window": (d) => {
     const w = findWindow(d.day, d.win);
