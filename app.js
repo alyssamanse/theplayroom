@@ -2,7 +2,7 @@ import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS, MILESTONES } 
 import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-13";
+const APP_VERSION = "2026.10.14-14";
 
 /* =========================================================
    Storage
@@ -251,8 +251,11 @@ function toyFitCount(t) {
   const age = ageMonths().decimal;
   return toyActivities(t).filter((a) => fitsAge(a, age)).length;
 }
-const activityToysOut = (a) => (a.toys || []).length > 0 && a.toys.every((id) => toyById(id)?.status === "out");
-const activityToysAway = (a) => (a.toys || []).some((id) => { const t = toyById(id); return t && t.status !== "out"; });
+// Toys that are always on hand, so activities using them never count as "put away".
+const ALWAYS_AVAILABLE = new Set(["t-board-books"]);
+const toyAvailable = (id) => ALWAYS_AVAILABLE.has(id) || toyById(id)?.status === "out";
+const activityToysOut = (a) => (a.toys || []).length > 0 && a.toys.every(toyAvailable);
+const activityToysAway = (a) => (a.toys || []).some((id) => toyById(id) && !toyAvailable(id));
 
 function rotationPlan({ fresh = false } = {}) {
   const { outTarget, rotateDays } = state.settings;
@@ -297,7 +300,7 @@ function suggest(k, wid, { maxMinutes = Infinity, count = 1 } = {}) {
   let budget = maxMinutes;
   for (let n = 0; n < count; n++) {
     const scored = state.activities
-      .filter((a) => fitsAge(a, age) && !inDay.has(a.id) && a.minutes <= budget)
+      .filter((a) => fitsAge(a, age) && !inDay.has(a.id) && a.minutes <= budget && !activityToysAway(a))
       .map((a) => {
         const h = historyFor(a.id);
         if (h.lastNotReady && h.lastNotReady >= twoWeeksAgo) return null;
@@ -306,7 +309,6 @@ function suggest(k, wid, { maxMinutes = Infinity, count = 1 } = {}) {
         for (const s of a.skills) score += skillCount[s] ? 1 / (1 + skillCount[s]) : 3;
         score += h.loved * 1.5 + h.liked * 0.5 - h.notinterested * 1.5 + (a.fav ? 2 : 0);
         if (activityToysOut(a)) score += 2.5;
-        else if (activityToysAway(a)) score -= 3;
         if (h.last && h.last >= twoDaysAgo) score -= 2;
         return { a, score };
       })
