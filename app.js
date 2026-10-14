@@ -1,7 +1,8 @@
 import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS } from "./seed.js";
+import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-4";
+const APP_VERSION = "2026.10.14-5";
 
 /* =========================================================
    Storage
@@ -34,7 +35,16 @@ function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return freshState();
-    const s = JSON.parse(raw);
+    return migrate(JSON.parse(raw));
+  } catch (e) {
+    console.error("Could not read saved data", e);
+    return freshState();
+  }
+}
+
+// Fill in missing fields and bring older data up to the current starter content.
+function migrate(s) {
+  {
     s.settings = { ...DEFAULT_SETTINGS, ...(s.settings || {}) };
     s.activities ||= [];
     s.hiddenSeedIds ||= [];
@@ -58,16 +68,17 @@ function load() {
       s.seedVersion = SEED_VERSION;
     }
     return s;
-  } catch (e) {
-    console.error("Could not read saved data", e);
-    return freshState();
   }
 }
 
 let state = load();
-function save() {
+function saveLocal() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
   catch (e) { toast("Couldn't save. Storage may be full."); }
+}
+function save() {
+  saveLocal();
+  sync.schedulePush();
 }
 save();
 
@@ -77,6 +88,8 @@ const ui = {
   lib: { q: "", age: "now", skill: null, tag: null, fav: false },
   showRetired: false,
   updateAvailable: null,
+  sync: { ...sync.status },
+  pendingRender: false,
   sheet: null, // { type, ...args }
   openReactions: new Set(), // item ids showing reaction chips
 };
@@ -654,11 +667,55 @@ function sheetForm({ id, toy }) {
   return sheetShell(id ? "Edit activity" : "New activity", body);
 }
 
+function syncSection() {
+  const st = ui.sync;
+  const when = st.lastSynced ? new Date(st.lastSynced).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  if (st.state === "off") {
+    return `<p class="history">Sign in so your plans, toys, and library stay the same on every family phone.</p>
+      <div class="btn-row"><button class="btn small primary" data-action="signin">Sign in</button></div>`;
+  }
+  if (st.state === "unverified") {
+    return `<p class="history">We sent a verification link to ${esc(st.email)}. Open it, then come back and tap I've verified.</p>
+      <div class="btn-row">
+        <button class="btn small primary" data-action="sync-recheck">I've verified</button>
+        <button class="btn small" data-action="sync-resend">Send the link again</button>
+        <button class="btn small ghost" data-action="signout">Sign out</button>
+      </div>`;
+  }
+  const line = {
+    connecting: "Connecting…",
+    syncing: "Syncing…",
+    synced: `Synced${when ? ` at ${when}` : ""}.`,
+    offline: "Offline. Changes are saved on this phone and will sync when you're back online.",
+    denied: st.error,
+  }[st.state] || "";
+  return `<p class="history">${st.email ? `Signed in as ${esc(st.email)}. ` : ""}${esc(line)}</p>
+    ${st.state === "denied" ? "" : ""}
+    <div class="btn-row"><button class="btn small ghost" data-action="signout">Sign out</button></div>`;
+}
+
+function sheetSignIn(s) {
+  const body = `<p class="history">Use the same account on each phone. Google works best in Safari; email and password works everywhere, including the home-screen app.</p>
+    <div class="btn-row"><button class="btn primary" data-action="signin-google">Continue with Google</button></div>
+    <form data-form="signin" style="margin-top:8px">
+      <div class="field"><label for="a-email">Email</label><input id="a-email" name="email" type="email" autocomplete="username" required value="${esc(s.email || "")}"></div>
+      <div class="field"><label for="a-pass">Password</label><input id="a-pass" name="password" type="password" autocomplete="current-password" minlength="6" required></div>
+      ${s.error ? `<p class="safety" style="margin-top:12px">${esc(s.error)}</p>` : ""}
+      <div class="btn-row">
+        <button class="btn primary" type="submit" name="mode" value="signin">Sign in</button>
+        <button class="btn" type="submit" name="mode" value="create">Create account</button>
+      </div>
+      <div class="btn-row"><button class="btn small ghost" type="submit" name="mode" value="reset" formnovalidate>Forgot password</button></div>
+    </form>`;
+  return sheetShell("Sign in to sync", body);
+}
+
 function sheetSettings() {
   const s = state.settings;
   const hidden = state.hiddenSeedIds.length;
   const welcome = !s.birthdate;
-  const body = `${welcome ? `<p class="history">Welcome to The Playroom. Add your baby's name and birthdate so the library shows activities for her age.</p>` : ""}<form data-form="settings">
+  const body = `${welcome ? `<p class="history">Welcome to The Playroom. Add your baby's name and birthdate so the library shows activities for her age.</p>
+    <p class="history" style="margin-top:8px">Already using it on another phone? <button class="btn small" data-action="signin">Sign in to sync</button></p>` : ""}<form data-form="settings">
     <div class="field"><label for="s-name">Baby's name</label><input id="s-name" name="name" value="${esc(s.name)}"></div>
     <div class="field"><label for="s-bd">Birthdate</label><input id="s-bd" name="birthdate" type="date" required value="${esc(s.birthdate)}"></div>
     <div class="field"><label for="s-wt">Typical wake window (minutes)</label><input id="s-wt" name="windowTarget" type="number" inputmode="numeric" min="30" max="360" value="${s.windowTarget}"><span class="help">Drives the timer on the Now screen. Adjust as her windows stretch.</span></div>
@@ -670,6 +727,8 @@ function sheetSettings() {
     </div>
     <div class="btn-row"><button class="btn primary" type="submit">Save settings</button></div>
   </form>
+  <h4>Sync between phones</h4>
+  ${syncSection()}
   <h4>Backup</h4>
   <p class="history">Your data lives on this phone. Save a backup now and then so nothing is lost.</p>
   <div class="btn-row">
@@ -778,7 +837,7 @@ function renderSheet() {
   const s = ui.sheet;
   if (!s) { root.innerHTML = ""; document.body.style.overflow = ""; return; }
   const prevScroll = $(".sheet", root)?.scrollTop || 0;
-  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm };
+  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, signin: sheetSignIn, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm };
   root.innerHTML = map[s.type](s);
   document.body.style.overflow = "hidden";
   const sheet = $(".sheet", root);
@@ -787,8 +846,11 @@ function renderSheet() {
 }
 function openSheet(sheet) { ui.sheet = sheet; ui.pickQ = ""; renderSheet(); }
 function closeSheet() {
-  if (!state.settings.birthdate) { toast("Add a birthdate to get started"); return; }
-  ui.sheet = null; renderSheet(); render(); }
+  if (!state.settings.birthdate) {
+    if (ui.sheet?.type !== "settings") { ui.sheet = { type: "settings" }; renderSheet(); return; }
+    toast("Add a birthdate to get started"); return;
+  }
+  ui.sheet = null; ui.pendingRender = false; renderSheet(); render(); }
 function refreshSheet() { if (ui.sheet) { ui.sheet._keepScroll = true; renderSheet(); } }
 
 function tick() {
@@ -1016,6 +1078,17 @@ const actions = {
     save(); closeSheet(); toast("Toy removed");
   },
   "hard-refresh": hardRefresh,
+  signin: () => openSheet({ type: "signin" }),
+  "signin-google": async () => {
+    try { await sync.signInGoogle(); if (ui.sheet?.type === "signin") { ui.sheet = { type: "settings" }; renderSheet(); } }
+    catch (e) { ui.sheet = { type: "signin", error: e.message }; renderSheet(); }
+  },
+  signout: async () => {
+    if (!confirm("Sign out? Everything stays on this phone; it just stops syncing.")) return;
+    await sync.signOut(); refreshSheet(); toast("Signed out");
+  },
+  "sync-resend": async () => { await sync.resendVerification(); toast("Verification email sent"); },
+  "sync-recheck": async () => { await sync.recheckVerification(); refreshSheet(); },
   "form-skill": (d, e) => {
     const b = e.target.closest("button");
     b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
@@ -1114,6 +1187,25 @@ document.addEventListener("submit", (e) => {
     s.rotateDays = clampNum(fd.get("rotateDays"), 1, 60, s.rotateDays);
     save(); closeSheet(); toast("Settings saved");
   }
+  if (form.dataset.form === "signin") {
+    const mode = e.submitter?.value || "signin";
+    const email = String(fd.get("email") || "").trim();
+    const password = String(fd.get("password") || "");
+    const fail = (err) => { ui.sheet = { type: "signin", email, error: err.message }; renderSheet(); };
+    if (mode === "reset") {
+      if (!email) { fail(new Error("Enter your email first.")); return; }
+      sync.resetPassword(email).then(() => toast("Password reset email sent")).catch(fail);
+      return;
+    }
+    toast(mode === "create" ? "Creating account…" : "Signing in…");
+    (mode === "create" ? sync.createAccount(email, password) : sync.signInEmail(email, password))
+      .then(() => {
+        ui.sheet = { type: "settings" }; renderSheet();
+        if (mode === "create") toast("Check your email for a verification link");
+      })
+      .catch(fail);
+    return;
+  }
   if (form.dataset.form === "toy") {
     const name = (fd.get("name") || "").trim();
     if (!name) { toast("Give the toy a name"); return; }
@@ -1189,6 +1281,26 @@ async function hardRefresh() {
   } catch { /* keep going */ }
   location.replace(`${location.pathname}?v=${Date.now()}`);
 }
+
+sync.init({
+  getState: () => state,
+  applyMain: (main) => {
+    const plans = state.plans;
+    state = migrate({ ...main, plans });
+  },
+  applyDay: (k, plan) => { state.plans[k] = plan; },
+  afterRemote: () => {
+    saveLocal();
+    // Don't wipe a form someone is typing in; re-render when the sheet closes.
+    const typing = ["form", "toyForm", "signin"].includes(ui.sheet?.type) || (ui.sheet?.type === "settings" && document.activeElement?.closest?.("form"));
+    if (typing) ui.pendingRender = true; else render();
+  },
+  onStatus: (st) => {
+    ui.sync = st;
+    if (ui.sheet?.type === "settings") refreshSheet();
+    if (st.state === "denied") toast("This account doesn't have access yet");
+  },
+});
 
 render();
 if (!state.settings.birthdate) openSheet({ type: "settings" });

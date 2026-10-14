@@ -1,6 +1,6 @@
 // Network-first service worker: fresh code whenever online, cached copy when offline.
-const CACHE = "playroom-v3";
-const SHELL = ["./", "index.html", "styles.css", "app.js", "seed.js", "manifest.webmanifest", "icons/icon-192.png"];
+const CACHE = "playroom-v4";
+const SHELL = ["./", "index.html", "styles.css", "app.js", "seed.js", "sync.js", "version.json", "manifest.webmanifest", "icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

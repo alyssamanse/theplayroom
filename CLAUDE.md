@@ -13,3 +13,9 @@ Vanilla JS home-screen web app (no build step), hosted on GitHub Pages from `mai
   To drop a starter activity, list its id in `REMOVED_SEED_IDS`.
 - Activities link to toys via `toys: [toyId]` (ids in `TOYS`).
 - Toy list comes from Merritt's Closet (Firestore doc `wishlists/w_f6Un6k7se0dvifVErHRe`, field `toys`).
+
+## Sync (sync.js)
+- Firebase project `the-playroom-5bd48`. Firestore: `playrooms/family` holds `{json}` of settings/library/toys; `playrooms/family/days/{YYYY-MM-DD}` holds each day's plan as `{date, json}`.
+- localStorage stays the source of truth on each phone; sync mirrors it. Unsent changes are tracked in localStorage `playroom.sync`.
+- Access is controlled only by Firestore rules (allowlist of verified emails). Lys and Michael both have full edit access.
+- Firebase SDK loads from gstatic only after sign-in, so the app works with no network.
