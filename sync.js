@@ -85,6 +85,7 @@ async function loadSdk() {
 const mainRef = () => sdk.fs.doc(db, "playrooms", FAMILY_ID);
 const dayRef = (k) => sdk.fs.doc(db, "playrooms", FAMILY_ID, "days", k);
 const daysCol = () => sdk.fs.collection(db, "playrooms", FAMILY_ID, "days");
+const backupsCol = () => sdk.fs.collection(db, "playrooms", FAMILY_ID, "backups");
 
 /* ---------- public API ---------- */
 export async function init(h) {
@@ -227,7 +228,76 @@ async function initialSync(u) {
   await Promise.all(writes.map((w) => (w[0] === "main" ? writeMain(w[1]) : writeDay(w[1], w[2]))));
   listen();
   live = true;
+  maybeBackup().catch((e) => console.warn("Weekly backup skipped", e));
 }
+
+/* ---------- weekly backups ---------- */
+// Once a week, the first signed-in phone to open the app saves a compressed copy of everything.
+// The last KEEP_BACKUPS copies are kept; older ones are deleted.
+const KEEP_BACKUPS = 8;
+const BACKUP_EVERY_DAYS = 7;
+
+const toB64 = (buf) => {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+};
+const fromB64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+async function pack(str) {
+  if (typeof CompressionStream === "undefined") return { enc: "json", data: str };
+  const stream = new Blob([str]).stream().pipeThrough(new CompressionStream("gzip"));
+  return { enc: "gzip64", data: toB64(await new Response(stream).arrayBuffer()) };
+}
+async function unpack({ enc, data }) {
+  if (enc !== "gzip64") return data;
+  const stream = new Blob([fromB64(data)]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Response(stream).text();
+}
+const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+async function maybeBackup() {
+  if (!live || !user) return;
+  const { fs } = sdk;
+  const last = meta.lastBackup ? new Date(meta.lastBackup) : null;
+  if (last && Date.now() - last < BACKUP_EVERY_DAYS * 86400000) return;
+  const snap = await fs.getDocs(fs.query(backupsCol(), fs.orderBy("createdAt", "desc"), fs.limit(KEEP_BACKUPS + 4)));
+  const newest = snap.docs[0]?.data().createdAt?.toDate?.();
+  if (newest && Date.now() - newest < BACKUP_EVERY_DAYS * 86400000) {
+    meta.lastBackup = newest.toISOString(); saveMeta(meta);
+    return;
+  }
+  const state = hooks.getState();
+  const packed = await pack(JSON.stringify(state));
+  if (packed.data.length > 1000000) { console.warn("Backup too large to store"); return; }
+  const id = localDay();
+  await fs.setDoc(fs.doc(backupsCol(), id), {
+    ...packed,
+    createdAt: fs.serverTimestamp(),
+    createdBy: user.email || "",
+    summary: `${Object.keys(state.plans || {}).length} days, ${(state.activities || []).length} activities, ${(state.toys || []).length} toys`,
+  });
+  meta.lastBackup = new Date().toISOString(); saveMeta(meta);
+  // Trim to the newest few.
+  const old = snap.docs.filter((d) => d.id !== id).slice(KEEP_BACKUPS - 1);
+  await Promise.all(old.map((d) => fs.deleteDoc(d.ref)));
+}
+
+export async function listBackups() {
+  if (!live) throw new Error("Sign in to see your weekly backups.");
+  const { fs } = sdk;
+  const snap = await fs.getDocs(fs.query(backupsCol(), fs.orderBy("createdAt", "desc"), fs.limit(KEEP_BACKUPS)));
+  return snap.docs.map((d) => ({ id: d.id, createdAt: d.data().createdAt?.toDate?.()?.toISOString() || null, createdBy: d.data().createdBy || "", summary: d.data().summary || "" }));
+}
+
+export async function loadBackup(id) {
+  const { fs } = sdk;
+  const snap = await fs.getDoc(fs.doc(backupsCol(), id));
+  if (!snap.exists()) throw new Error("That backup isn't available anymore.");
+  return JSON.parse(await unpack(snap.data()));
+}
+
+export const lastBackupAt = () => meta.lastBackup || null;
 
 const itemCount = (p) => (p?.windows || []).reduce((n, w) => n + w.items.length + (w.startedAt ? 1 : 0), 0);
 

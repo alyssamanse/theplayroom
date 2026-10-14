@@ -2,7 +2,7 @@ import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS, MILESTONES } 
 import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-11";
+const APP_VERSION = "2026.10.14-12";
 
 /* =========================================================
    Storage
@@ -862,6 +862,18 @@ function sheetSignIn(s) {
   return sheetShell("Sign in to sync", body);
 }
 
+function sheetBackups(s) {
+  const list = s.list;
+  const body = s.error ? `<p class="safety">${esc(s.error)}</p>`
+    : !list ? `<p class="history">Loading backups…</p>`
+    : !list.length ? `<div class="empty">No backups yet. The first one saves automatically within a day of signing in.</div>`
+    : `<p class="history">Restoring replaces everything on every family phone with that week's copy. You can undo right after.</p>
+       <div class="pick-list">${list.map((b) => `<button class="pick" data-action="restore-backup" data-id="${b.id}">
+         <span class="grow"><strong>${b.createdAt ? new Date(b.createdAt).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }) : esc(b.id)}</strong>
+         <div class="item-meta">${esc(b.summary)}${b.createdBy ? ` · saved from ${esc(b.createdBy)}` : ""}</div></span></button>`).join("")}</div>`;
+  return sheetShell("Weekly backups", body);
+}
+
 function sheetSettings() {
   const s = state.settings;
   const hidden = state.hiddenSeedIds.length;
@@ -881,13 +893,11 @@ function sheetSettings() {
   </form>
   <h4>Sync between phones</h4>
   ${syncSection()}
-  <h4>Backup</h4>
-  <p class="history">Your data lives on this phone. Save a backup now and then so nothing is lost.</p>
-  <div class="btn-row">
-    <button class="btn small" data-action="export">Save backup</button>
-    <label class="btn small" for="import-file">Restore backup</label>
-    <input id="import-file" type="file" accept="application/json,.json" class="visually-hidden" data-change="import">
-  </div>
+  <h4>Weekly backups</h4>
+  ${ui.sync.state === "off" || ui.sync.state === "unverified"
+    ? `<p class="history">Sign in above and a copy of everything is saved to the cloud automatically once a week.</p>`
+    : `<p class="history">A copy of everything is saved automatically once a week, and the last 8 weeks are kept.${sync.lastBackupAt() ? ` Last saved ${new Date(sync.lastBackupAt()).toLocaleDateString([], { month: "short", day: "numeric" })}.` : ""}</p>
+       <div class="btn-row"><button class="btn small" data-action="backups">Restore from a backup</button></div>`}
   <h4>App version</h4>
   <p class="history">You're on version ${APP_VERSION}.${ui.updateAvailable ? ` Version ${esc(ui.updateAvailable)} is ready.` : ""} Updating keeps all your plans and toys.</p>
   <div class="btn-row"><button class="btn small" data-action="hard-refresh">Refresh to latest version</button></div>
@@ -1179,7 +1189,7 @@ function renderSheet() {
   const s = ui.sheet;
   if (!s) { root.innerHTML = ""; document.body.style.overflow = ""; return; }
   const prevScroll = $(".sheet", root)?.scrollTop || 0;
-  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, signin: sheetSignIn, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm, skillPick: sheetSkillPick, times: sheetTimes, rotationSettings: sheetRotationSettings, milestones: sheetMilestones, milestoneEdit: sheetMilestoneEdit, recap: sheetRecap, windowMenu: sheetWindowMenu, dayTemplates: sheetDayTemplates };
+  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, signin: sheetSignIn, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm, skillPick: sheetSkillPick, times: sheetTimes, rotationSettings: sheetRotationSettings, milestones: sheetMilestones, milestoneEdit: sheetMilestoneEdit, recap: sheetRecap, windowMenu: sheetWindowMenu, dayTemplates: sheetDayTemplates, backups: sheetBackups };
   root.innerHTML = map[s.type](s);
   document.body.style.overflow = "hidden";
   const sheet = $(".sheet", root);
@@ -1455,6 +1465,21 @@ const actions = {
     save(); closeSheet(); toast("Toy removed");
   },
   "hard-refresh": hardRefresh,
+  backups: () => {
+    const sheet = { type: "backups", list: null, error: null };
+    openSheet(sheet);
+    sync.listBackups().then((list) => { if (ui.sheet === sheet) { sheet.list = list; refreshSheet(); } })
+      .catch((e) => { if (ui.sheet === sheet) { sheet.error = e.message || "Couldn't load backups. Check your connection."; refreshSheet(); } });
+  },
+  "restore-backup": async (d) => {
+    if (!confirm("Replace everything with this backup? This changes every family phone.")) return;
+    const before = JSON.stringify(state);
+    try {
+      const data = await sync.loadBackup(d.id);
+      state = migrate(data); save(); closeSheet();
+      toastUndo("Backup restored", before);
+    } catch (e) { toast(e.message || "Couldn't restore that backup"); }
+  },
   undo: () => {
     if (!undoSnapshot) return;
     state = migrate(JSON.parse(undoSnapshot));
@@ -1597,16 +1622,6 @@ const actions = {
     state.hiddenSeedIds = [];
     save(); refreshSheet(); render(); toast("Restored");
   },
-  export: async () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const file = new File([blob], `playroom-backup-${todayKey()}.json`, { type: "application/json" });
-    try {
-      if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: "Playroom backup" }); return; }
-    } catch (e) { if (e.name === "AbortError") return; }
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  },
 };
 
 function moveBy(d, delta) {
@@ -1676,17 +1691,6 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   const k = e.target.dataset.change;
   if (k === "move-item") actions["move-item"]({ ...e.target.dataset }, e);
-  if (k === "import") {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    f.text().then((txt) => {
-      const data = JSON.parse(txt);
-      if (!data.activities || !data.plans) throw new Error("bad file");
-      if (!confirm("Replace everything in the app with this backup?")) return;
-      localStorage.setItem(KEY, JSON.stringify(data));
-      state = load(); save(); closeSheet(); toast("Backup restored");
-    }).catch(() => toast("That file isn't a Playroom backup"));
-  }
 });
 
 document.addEventListener("submit", (e) => {
