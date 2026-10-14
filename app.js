@@ -2,7 +2,7 @@ import { SEED, SEED_VERSION, REMOVED_SEED_IDS, SKILLS, TAGS, TOYS } from "./seed
 import * as sync from "./sync.js";
 
 // Bump this (and version.json) with every release so phones know an update is waiting.
-const APP_VERSION = "2026.10.14-5";
+const APP_VERSION = "2026.10.14-6";
 
 /* =========================================================
    Storage
@@ -50,6 +50,11 @@ function migrate(s) {
     s.hiddenSeedIds ||= [];
     s.plans ||= {};
     s.toys ||= [];
+    // Reactions were renamed: okay -> liked, notyet -> notready.
+    const renamed = { okay: "liked", notyet: "notready" };
+    for (const p of Object.values(s.plans)) for (const w of p.windows || []) for (const it of w.items || []) {
+      if (renamed[it.reaction]) it.reaction = renamed[it.reaction];
+    }
     s.hiddenToyIds ||= [];
     // Bring saved data up to date with the latest starter activities and toys.
     if ((s.seedVersion || 0) < SEED_VERSION) {
@@ -158,15 +163,17 @@ const findWindow = (k, wid) => ensurePlan(k).windows.find((w) => w.id === wid);
 const windowMinutes = (w) => w.items.reduce((sum, it) => sum + (act(it.activityId)?.minutes || 0), 0);
 
 /* Reaction history across all days ---------------------- */
+const REACTIONS = { loved: "Loved it", liked: "Liked it", notinterested: "Not interested", notready: "Not ready" };
 function historyFor(activityId) {
-  const out = { done: 0, loved: 0, okay: 0, notyet: 0, last: null, lastNotYet: null };
+  const out = { done: 0, loved: 0, liked: 0, notinterested: 0, notready: 0, last: null, lastNotReady: null, lastNotInterested: null };
   for (const [k, p] of Object.entries(state.plans)) {
     for (const w of p.windows) for (const it of w.items) {
       if (it.activityId !== activityId || !it.done) continue;
       out.done++;
       if (it.reaction) out[it.reaction]++;
       if (!out.last || k > out.last) out.last = k;
-      if (it.reaction === "notyet" && (!out.lastNotYet || k > out.lastNotYet)) out.lastNotYet = k;
+      if (it.reaction === "notready" && (!out.lastNotReady || k > out.lastNotReady)) out.lastNotReady = k;
+      if (it.reaction === "notinterested" && (!out.lastNotInterested || k > out.lastNotInterested)) out.lastNotInterested = k;
     }
   }
   return out;
@@ -238,6 +245,7 @@ function suggest(k, wid, { maxMinutes = Infinity, count = 1 } = {}) {
   for (const w of plan.windows) for (const it of w.items) for (const s of act(it.activityId)?.skills || []) skillCount[s] = (skillCount[s] || 0) + 1;
   const twoWeeksAgo = dateKey(addDays(parseKey(k), -14));
   const twoDaysAgo = dateKey(addDays(parseKey(k), -2));
+  const oneWeekAgo = dateKey(addDays(parseKey(k), -7));
 
   const picks = [];
   let budget = maxMinutes;
@@ -246,10 +254,11 @@ function suggest(k, wid, { maxMinutes = Infinity, count = 1 } = {}) {
       .filter((a) => fitsAge(a, age) && !inDay.has(a.id) && a.minutes <= budget)
       .map((a) => {
         const h = historyFor(a.id);
-        if (h.lastNotYet && h.lastNotYet >= twoWeeksAgo) return null;
+        if (h.lastNotReady && h.lastNotReady >= twoWeeksAgo) return null;
+        if (h.lastNotInterested && h.lastNotInterested >= oneWeekAgo) return null;
         let score = Math.random() * 2.5;
         for (const s of a.skills) score += skillCount[s] ? 1 / (1 + skillCount[s]) : 3;
-        score += h.loved * 1.5 + (a.fav ? 2 : 0);
+        score += h.loved * 1.5 + h.liked * 0.5 - h.notinterested * 1.5 + (a.fav ? 2 : 0);
         if (activityToysOut(a)) score += 2.5;
         else if (activityToysAway(a)) score -= 3;
         if (h.last && h.last >= twoDaysAgo) score -= 2;
@@ -307,7 +316,7 @@ function itemRow(k, w, it, { reactions = false } = {}) {
   const a = act(it.activityId);
   if (!a) return "";
   const showR = reactions && it.done && (ui.openReactions.has(it.id) || !it.reaction);
-  const rLabel = { loved: "Loved it", okay: "Okay", notyet: "Not ready" };
+  const rLabel = REACTIONS;
   return `<li class="item ${it.done ? "done" : ""}">
     <button class="check" data-action="toggle" data-day="${k}" data-win="${w.id}" data-item="${it.id}" aria-pressed="${it.done}" aria-label="${it.done ? "Mark not done" : "Mark done"}: ${esc(a.title)}">${I.check}</button>
     <button class="item-main" data-action="item" data-day="${k}" data-win="${w.id}" data-item="${it.id}">
@@ -316,7 +325,7 @@ function itemRow(k, w, it, { reactions = false } = {}) {
     </button>
     <button class="more" data-action="item" data-day="${k}" data-win="${w.id}" data-item="${it.id}" aria-label="Options">${I.more}</button>
     ${showR ? `<div class="reactions" role="group" aria-label="How did it go?">
-      ${["loved", "okay", "notyet"].map((r) => `<button class="chip" data-action="react" data-r="${r}" data-day="${k}" data-win="${w.id}" data-item="${it.id}" aria-pressed="${it.reaction === r}">${rLabel[r]}</button>`).join("")}
+      ${Object.keys(REACTIONS).map((r) => `<button class="chip" data-action="react" data-r="${r}" data-day="${k}" data-win="${w.id}" data-item="${it.id}" aria-pressed="${it.reaction === r}">${rLabel[r]}</button>`).join("")}
     </div>` : ""}
   </li>`;
 }
@@ -328,14 +337,15 @@ function stacker(k) {
   const order = ["gross", "fine", "sensory", "language", "social", "cognitive"]; // bottom to top
   const widths = [124, 110, 96, 82, 68, 54];
   const practiced = order.filter((s) => counts[s]).length;
-  const missing = order.filter((s) => !counts[s]).map((s) => SKILLS[s].label.toLowerCase());
+  const missing = order.filter((s) => !counts[s]);
   const note = practiced === 6 ? "Every skill got some play today."
-    : practiced === 0 ? "Rings fill in as you check off activities."
-    : `Still open today: ${missing.join(", ")}.`;
+    : practiced === 0 ? "Rings fill in as you check off activities. Add an activity for any skill:"
+    : "Still open today. Tap a skill to add an activity for it:";
   return `<section class="stacker-wrap" aria-label="Skills practiced today">
     <div class="stacker" aria-hidden="true">${order.map((s, i) => `<span class="ring ${counts[s] ? "on" : ""}" style="--c:var(--${s});width:${widths[i]}px"></span>`).join("")}</div>
     <ul class="legend">${[...order].reverse().map((s) => `<li class="${counts[s] ? "on" : ""}"><i class="dot" style="background:var(--${s})"></i>${SKILLS[s].label}<span class="n">${counts[s] || ""}</span></li>`).join("")}</ul>
     <p class="stacker-note">${note}</p>
+    ${missing.length ? `<div class="skill-gaps">${missing.map((sk) => `<button class="chip" data-action="skill-pick" data-skill="${sk}" data-day="${k}"><i class="dot" style="background:var(--${sk})"></i>${SKILLS[sk].label}</button>`).join("")}</div>` : ""}
   </section>`;
 }
 
@@ -350,7 +360,7 @@ function viewNow() {
   if (active) {
     const target = state.settings.windowTarget;
     hero = `<section class="hero">
-      <div class="label">${esc(active.label)} · awake since ${fmtTime(active.startedAt)}</div>
+      <div class="label">${esc(active.label)} · awake since <button class="link" data-action="edit-times" data-day="${k}" data-win="${active.id}">${fmtTime(active.startedAt)}</button></div>
       <div class="clock" data-timer="${active.startedAt}">${fmtElapsed(Date.now() - new Date(active.startedAt))}</div>
       <div class="meter" data-meter="${active.startedAt}" data-target="${target}"><i></i></div>
       <div class="hint" data-hint="${active.startedAt}" data-target="${target}"></div>
@@ -390,7 +400,7 @@ function viewNow() {
     const d = w.items.filter((i) => i.done).length;
     const cls = w.startedAt && !w.endedAt ? "active" : w.endedAt ? "ended" : "";
     const when = w.startedAt ? `${fmtTime(w.startedAt)}${w.endedAt ? `–${fmtTime(w.endedAt)}` : " – now"}` : "";
-    return `<div class="day-row ${cls}"><span class="state"></span><div><strong>${esc(w.label)}</strong>${when ? `<div class="status" style="font-size:13px;color:var(--muted)">${when}</div>` : ""}</div><span class="count">${d}/${w.items.length}</span></div>`;
+    return `<button class="day-row ${cls}" data-action="edit-times" data-day="${k}" data-win="${w.id}" aria-label="Edit ${esc(w.label)} times"><span class="state"></span><div><strong>${esc(w.label)}</strong><div class="status" style="font-size:13px;color:var(--muted)">${when || "Tap to log times"}</div></div><span class="count">${d}/${w.items.length}</span></button>`;
   }).join("");
 
   return header(parseKey(k).toLocaleDateString([], { weekday: "long" }), ageLabel() ? `${name} is ${ageLabel()}` : "")
@@ -441,13 +451,14 @@ function viewToys() {
     hero = `<section class="hero">
       <div class="label">Toy rotation</div>
       <div class="resting">Keep ${outTarget} toys out at a time and swap them every ${rotateDays} days.</div>
+      <button class="link" data-action="rotation-settings">Change these numbers</button>
       <p class="hint">Fewer toys out means longer, deeper play, and toys feel new again when they come back.</p>
       <button class="btn primary big" data-action="rotate" data-fresh="1">Pick a starting set for me</button>
       <button class="btn big" style="margin-top:8px" data-action="choose-out">Choose what's out myself</button>
     </section>`;
   } else {
     hero = `<section class="hero">
-      <div class="label">${out.length} of ${outTarget} toys out</div>
+      <div class="label">${out.length} of ${outTarget} toys out · swap every ${rotateDays} days · <button class="link" data-action="rotation-settings">Change</button></div>
       <div class="resting">${due.length ? `${due.length} ${due.length === 1 ? "toy has" : "toys have"} been out ${rotateDays}+ days.` : nextDue === 0 ? "A swap is due today." : `Next swap in ${nextDue} ${nextDue === 1 ? "day" : "days"}.`}</div>
       <button class="btn ${due.length ? "primary" : ""} big" data-action="rotate">${due.length ? "Swap toys now" : "Swap early"}</button>
     </section>`;
@@ -473,7 +484,7 @@ function viewPlan() {
         <button class="rename" data-action="rename" data-day="${k}" data-win="${w.id}" aria-label="Rename ${esc(w.label)}">${esc(w.label)}</button>
         <span class="mins">${mins ? fmtMin(mins) : ""}</span>
       </div>
-      ${status ? `<div class="status">${status}</div>` : ""}
+      <button class="status link" data-action="edit-times" data-day="${k}" data-win="${w.id}">${status || (isToday ? "Log wake and nap times" : "")}</button>
       ${w.items.length ? `<ul class="list">${w.items.map((it) => itemRow(k, w, it, { reactions: true })).join("")}</ul>` : `<div class="empty">Empty window</div>`}
       <div class="btn-row">
         <button class="btn small" data-action="pick" data-day="${k}" data-win="${w.id}">Add</button>
@@ -565,7 +576,9 @@ function sheetDetail({ id, day, win, item }) {
   const parts = [];
   if (h.done) parts.push(`Done ${h.done} ${h.done === 1 ? "time" : "times"}`);
   if (h.loved) parts.push(`loved ${h.loved}×`);
-  if (h.notyet) parts.push(`not ready ${h.notyet}×`);
+  if (h.liked) parts.push(`liked ${h.liked}×`);
+  if (h.notinterested) parts.push(`not interested ${h.notinterested}×`);
+  if (h.notready) parts.push(`not ready ${h.notready}×`);
   if (h.last) parts.push(`last on ${parseKey(h.last).toLocaleDateString([], { month: "short", day: "numeric" })}`);
   const inPlan = item ? findWindow(day, win) : null;
 
@@ -806,6 +819,72 @@ function sheetChooseOut() {
   return sheetShell("What's out now?", body);
 }
 
+function sheetSkillPick(s) {
+  const k = s.day;
+  const plan = ensurePlan(k);
+  const age = ageMonths(parseKey(k)).decimal;
+  const open = plan.windows.filter((w) => !w.endedAt);
+  if (!s.win || !plan.windows.some((w) => w.id === s.win)) {
+    s.win = (plan.windows.find((w) => w.startedAt && !w.endedAt) || open[0] || plan.windows[plan.windows.length - 1])?.id;
+  }
+  const w = findWindow(k, s.win);
+  const inWin = new Set(w ? w.items.map((i) => i.activityId) : []);
+  const planned = new Set(plan.windows.flatMap((x) => x.items.filter((i) => !i.done).map((i) => i.activityId)));
+  const list = state.activities
+    .filter((a) => fitsAge(a, age) && a.skills.includes(s.skill))
+    .map((a) => {
+      const h = historyFor(a.id);
+      let score = h.loved * 2 + h.liked - h.notinterested * 2 + (a.fav ? 3 : 0) + (activityToysOut(a) ? 3 : activityToysAway(a) ? -2 : 0);
+      if (h.lastNotReady && h.lastNotReady >= dateKey(addDays(parseKey(k), -14))) score -= 10;
+      return { a, score };
+    })
+    .sort((x, y) => y.score - x.score || x.a.title.localeCompare(y.a.title))
+    .map((x) => x.a);
+  const body = `
+    <div class="field"><span class="lbl">Add to</span><div class="skill-pick">
+      ${plan.windows.map((x) => `<button class="chip" data-action="skill-pick-win" data-win="${x.id}" aria-pressed="${x.id === s.win}">${esc(x.label)}${x.endedAt ? " (done)" : x.startedAt ? " (now)" : ""}</button>`).join("")}
+    </div></div>
+    <div class="pick-list">${list.map((a) => {
+      const added = inWin.has(a.id);
+      const note = activityToysOut(a) ? " · toys out" : activityToysAway(a) ? " · toy put away" : "";
+      return `<button class="pick ${added ? "added" : ""}" data-action="skill-pick-add" data-id="${a.id}">
+        <span class="grow"><strong>${a.fav ? "★ " : ""}${esc(a.title)}</strong><div class="item-meta">${skillDots(a.skills)} ${a.minutes} min${note}${planned.has(a.id) && !added ? " · planned" : ""}</div></span>
+        <span class="plus">${added ? "✓" : "+"}</span></button>`;
+    }).join("") || `<div class="empty">No ${SKILLS[s.skill].label.toLowerCase()} activities for her age yet.</div>`}</div>
+    <div class="btn-row"><button class="btn primary" data-action="close-sheet">Done</button></div>`;
+  return sheetShell(`${SKILLS[s.skill].label} ideas`, body);
+}
+
+const timeOf = (iso) => { if (!iso) return ""; const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+function sheetTimes({ day, win }) {
+  const w = findWindow(day, win);
+  if (!w) return "";
+  const body = `<form data-form="times" data-day="${day}" data-win="${win}">
+    <div class="row2" style="grid-template-columns:1fr 1fr">
+      <div class="field"><label for="w-start">Woke up</label><input id="w-start" name="start" type="time" value="${timeOf(w.startedAt)}"></div>
+      <div class="field"><label for="w-end">Fell asleep</label><input id="w-end" name="end" type="time" value="${timeOf(w.endedAt)}"></div>
+    </div>
+    <p class="history" style="margin-top:10px">Leave "Fell asleep" empty if she's still awake.${w.startedAt && w.endedAt ? ` Awake ${fmtMin(Math.round((new Date(w.endedAt) - new Date(w.startedAt)) / 60000))}.` : ""}</p>
+    <div class="btn-row">
+      <button class="btn primary" type="submit">Save times</button>
+      ${w.startedAt ? `<button class="btn ghost danger" type="button" data-action="clear-times" data-day="${day}" data-win="${win}">Clear times</button>` : ""}
+    </div>
+  </form>`;
+  return sheetShell(`${w.label} times`, body);
+}
+
+function sheetRotationSettings() {
+  const s = state.settings;
+  const body = `<form data-form="rotation">
+    <div class="row2" style="grid-template-columns:1fr 1fr">
+      <div class="field"><label for="r-ot">Toys out at once</label><input id="r-ot" name="outTarget" type="number" inputmode="numeric" min="1" max="20" value="${s.outTarget}"></div>
+      <div class="field"><label for="r-rd">Swap every (days)</label><input id="r-rd" name="rotateDays" type="number" inputmode="numeric" min="1" max="60" value="${s.rotateDays}"></div>
+    </div>
+    <div class="btn-row"><button class="btn primary" type="submit">Save</button></div>
+  </form>`;
+  return sheetShell("Rotation settings", body);
+}
+
 function sheetToyForm({ id }) {
   const t = id ? toyById(id) : { name: "", brand: "" };
   const body = `<form data-form="toy" data-id="${id || ""}">
@@ -837,7 +916,7 @@ function renderSheet() {
   const s = ui.sheet;
   if (!s) { root.innerHTML = ""; document.body.style.overflow = ""; return; }
   const prevScroll = $(".sheet", root)?.scrollTop || 0;
-  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, signin: sheetSignIn, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm };
+  const map = { detail: sheetDetail, addTo: sheetAddTo, picker: sheetPicker, form: sheetForm, settings: sheetSettings, signin: sheetSignIn, toy: sheetToy, rotate: sheetRotate, chooseOut: sheetChooseOut, toyForm: sheetToyForm, skillPick: sheetSkillPick, times: sheetTimes, rotationSettings: sheetRotationSettings };
   root.innerHTML = map[s.type](s);
   document.body.style.overflow = "hidden";
   const sheet = $(".sheet", root);
@@ -1078,6 +1157,22 @@ const actions = {
     save(); closeSheet(); toast("Toy removed");
   },
   "hard-refresh": hardRefresh,
+  "skill-pick": (d) => openSheet({ type: "skillPick", skill: d.skill, day: d.day }),
+  "skill-pick-win": (d) => { ui.sheet.win = d.win; refreshSheet(); },
+  "skill-pick-add": (d) => {
+    const w = findWindow(ui.sheet.day, ui.sheet.win);
+    const existing = w.items.find((i) => i.activityId === d.id && !i.done);
+    if (existing) w.items = w.items.filter((i) => i !== existing);
+    else { w.items.push({ id: uid(), activityId: d.id, done: false, reaction: null }); toast(`Added to ${w.label}`); }
+    save(); render(); refreshSheet();
+  },
+  "edit-times": (d) => openSheet({ type: "times", day: d.day, win: d.win }),
+  "clear-times": (d) => {
+    const w = findWindow(d.day, d.win);
+    w.startedAt = null; w.endedAt = null;
+    save(); closeSheet(); toast("Times cleared");
+  },
+  "rotation-settings": () => openSheet({ type: "rotationSettings" }),
   signin: () => openSheet({ type: "signin" }),
   "signin-google": async () => {
     try { await sync.signInGoogle(); if (ui.sheet?.type === "signin") { ui.sheet = { type: "settings" }; renderSheet(); } }
@@ -1204,6 +1299,30 @@ document.addEventListener("submit", (e) => {
         if (mode === "create") toast("Check your email for a verification link");
       })
       .catch(fail);
+    return;
+  }
+  if (form.dataset.form === "times") {
+    const w = findWindow(form.dataset.day, form.dataset.win);
+    const base = parseKey(form.dataset.day);
+    const toIso = (t) => { if (!t) return null; const [h, m] = t.split(":").map(Number); const d = new Date(base); d.setHours(h, m, 0, 0); return d.toISOString(); };
+    const start = toIso(fd.get("start")), end0 = toIso(fd.get("end"));
+    if (!start && end0) { toast("Add when she woke up"); return; }
+    const soon = Date.now() + 60000;
+    if ((start && new Date(start) > soon) || (end0 && new Date(end0) > soon)) { toast("That time hasn't happened yet"); return; }
+    let end = end0;
+    if (start && end && new Date(end) <= new Date(start)) { toast("Nap time has to be after wake time"); return; }
+    if (start && !end) {
+      // Only one window can be running at a time.
+      for (const x of ensurePlan(form.dataset.day).windows) if (x !== w && x.startedAt && !x.endedAt) x.endedAt = start;
+    }
+    w.startedAt = start; w.endedAt = end;
+    save(); closeSheet(); toast("Times saved");
+    return;
+  }
+  if (form.dataset.form === "rotation") {
+    state.settings.outTarget = clampNum(fd.get("outTarget"), 1, 20, state.settings.outTarget);
+    state.settings.rotateDays = clampNum(fd.get("rotateDays"), 1, 60, state.settings.rotateDays);
+    save(); closeSheet(); toast("Rotation settings saved");
     return;
   }
   if (form.dataset.form === "toy") {

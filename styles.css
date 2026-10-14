@@ -477,3 +477,17 @@ h3 { font-size: 16px; font-weight: 700; margin: 0; }
 .toy-fact { border: 0; }
 .toy-fact.out { background: color-mix(in srgb, var(--sensory) 20%, var(--surface)); }
 .hero .hint + .btn.big { margin-top: 14px; }
+
+/* ---------- links, skill gaps ---------- */
+.link {
+  background: none; border: 0; padding: 0;
+  color: inherit; font: inherit; font-weight: 700;
+  text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px;
+}
+.hero .link { display: inline; }
+.hero > .link { margin-top: 6px; color: var(--ink-2); font-size: 14px; }
+.card .status.link { display: block; text-align: left; margin-top: 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.skill-gaps { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.skill-gaps .chip { display: inline-flex; align-items: center; gap: 6px; }
+button.day-row { width: 100%; border: 0; text-align: left; }
+.reactions .chip { padding: 6px 10px; }
